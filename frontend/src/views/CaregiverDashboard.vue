@@ -629,6 +629,7 @@ async function createTask() {
     const data = await res.json()
     tasks.value.unshift(data.task)
     createResult.value = { success:true, msg:`✅ 任务 #${data.task.id} 已创建` }
+    if (data.task.video_mode === 'reminder') console.log('[DeepSeek] 匹配视频:', data.task.video_url)
     taskContent.value = ''
   } catch (e) { createResult.value = { success:false, msg:`❌ 网络错误: ${e.message}` }
   } finally { creating.value = false }
@@ -669,6 +670,7 @@ async function quickReminder(preset) {
     }
     const data = await res.json()
     tasks.value.unshift(data.task)
+    console.log('[DeepSeek] 匹配视频:', data.task.video_url)
     createResult.value = { success:true, msg:`✅ 已推送「${preset.label}」` }
   } catch (e) {
     createResult.value = { success:false, msg:`❌ 网络错误: ${e.message}` }
