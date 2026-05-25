@@ -50,32 +50,6 @@
         </span>
       </div>
 
-      <!-- Recommended Videos -->
-      <div class="flex-shrink-0 flex items-center gap-2 mb-3">
-        <span class="text-base font-bold text-gray-600"><i class="fas fa-video mr-1.5"></i>推荐视频</span>
-      </div>
-      <div class="flex-shrink-0 overflow-x-auto pb-3 -mx-6 px-6">
-        <div class="flex gap-4" style="min-width:max-content">
-          <button v-for="video in recommended" :key="video.id"
-            @click="playVideo(video.video_url, video.title)"
-            class="flex-shrink-0 w-56 bg-white/70 backdrop-blur-sm rounded-2xl border border-white/50 shadow-sm overflow-hidden
-                   group hover:shadow-lg hover:border-primary-200 transition-all text-left">
-            <div class="relative h-28 bg-gray-800/10 overflow-hidden">
-              <video :src="video.video_url" class="w-full h-full object-cover opacity-60 group-hover:opacity-90 transition-opacity" muted preload="metadata"></video>
-              <div class="absolute inset-0 flex items-center justify-center">
-                <div class="w-12 h-12 bg-white/90 rounded-full flex items-center justify-center shadow group-hover:scale-110 transition-transform">
-                  <i class="fas fa-play text-lg text-primary-600 ml-0.5"></i>
-                </div>
-              </div>
-            </div>
-            <div class="px-4 py-3">
-              <p class="font-bold text-gray-800 truncate">{{ video.title }}</p>
-              <p class="text-sm text-gray-400 mt-0.5">{{ video.duration }}s</p>
-            </div>
-          </button>
-        </div>
-      </div>
-
       <!-- History -->
       <div class="flex-shrink-0 flex items-center gap-2 mb-3 mt-1">
         <span class="text-base font-bold text-gray-600"><i class="fas fa-clock-rotate mr-1.5"></i>历史记录</span>
@@ -147,7 +121,6 @@ import { getAuth, logout } from '../auth'
 
 const router = useRouter()
 const auth = getAuth()
-const recommended = ref([])
 const history = ref([])
 const currentElderly = ref({ name: auth?.user?.name||'王奶奶', avatar: auth?.user?.avatar||'👵' })
 const connected = ref(true)
@@ -157,14 +130,6 @@ const listening = ref(false)
 const speechResult = ref(null)
 let pollTimer = null
 
-const demoVideos = [
-  { id:1, title:'💊 按时吃药', video_url:'/api/videos/medication_reminder.mp4', duration:15 },
-  { id:2, title:'🏃 康复运动', video_url:'/api/videos/exercise_reminder.mp4', duration:12 },
-  { id:3, title:'🍚 晚饭时间', video_url:'/api/videos/dinner_reminder.mp4', duration:10 },
-  { id:4, title:'🌙 早点休息', video_url:'/api/videos/bedtime_reminder.mp4', duration:12 },
-  { id:5, title:'💕 暖心问候', video_url:'/api/videos/daily_greeting.mp4', duration:12 },
-  { id:6, title:'🤗 情绪安抚', video_url:'/api/videos/emotional_comfort.mp4', duration:15 },
-]
 
 function handleLogout() { logout(); router.push('/') }
 
@@ -228,7 +193,7 @@ async function startListening() {
   } finally { listening.value = false }
 }
 
-onMounted(async () => { recommended.value=demoVideos; await loadHistory(); startPolling() })
+onMounted(async () => { await loadHistory(); startPolling() })
 onUnmounted(() => stopPolling())
 </script>
 

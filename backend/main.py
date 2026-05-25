@@ -182,6 +182,23 @@ SENSITIVE_PATTERNS = {
 }
 
 # ── Helpers ──────────────────────────────────────────────
+def _video_exists(video_path: str) -> bool:
+    """Check whether a video URL (starting with /api/videos/) maps to a real file."""
+    if not video_path.startswith("/api/videos/"):
+        return True  # external URL, can't verify
+    rel = video_path[len("/api/videos/"):]
+    return os.path.exists(os.path.join(VIDEOS_DIR, rel))
+
+def _safe_video_url(video_path: str) -> str:
+    """Return video_path if the file exists, otherwise a random known-good demo video."""
+    if _video_exists(video_path):
+        return video_path
+    print(f"  [video] 文件不存在，回退默认视频: {video_path}")
+    fallback = random.choice(["medication_reminder.mp4", "daily_greeting.mp4",
+                              "dinner_reminder.mp4", "bedtime_reminder.mp4",
+                              "exercise_reminder.mp4", "emotional_comfort.mp4"])
+    return f"/api/videos/{fallback}"
+
 def _select_video(text: str) -> str:
     if any(kw in text for kw in ["药","吃药","服药"]): return "medication_reminder.mp4"
     if any(kw in text for kw in ["饭","吃"]): return "dinner_reminder.mp4"
@@ -189,6 +206,62 @@ def _select_video(text: str) -> str:
     if any(kw in text for kw in ["运动","康复","活动"]): return "exercise_reminder.mp4"
     if any(kw in text for kw in ["心情","难过","想","孤独"]): return "emotional_comfort.mp4"
     return "daily_greeting.mp4"
+
+def _ai_match_video(prompt: str) -> str:
+    """Use DeepSeek to match a prompt to the best video in videos/提醒/.
+
+    Falls back to keyword matching if DeepSeek is unavailable.
+    """
+    reminders_dir = os.path.join(os.path.dirname(BASE_DIR), "videos", "提醒")
+    if not os.path.isdir(reminders_dir):
+        return f"/api/videos/{_select_video(prompt)}"
+
+    video_files = sorted([f for f in os.listdir(reminders_dir)
+                          if f.endswith(('.mp4', '.webm', '.mov', '.avi'))])
+    if not video_files:
+        return f"/api/videos/{_select_video(prompt)}"
+
+    # ── Try DeepSeek API ──
+    deepseek_key = os.getenv("DEEPSEEK_API_KEY")
+    if deepseek_key:
+        try:
+            from openai import OpenAI
+            client = OpenAI(
+                api_key=deepseek_key,
+                base_url=os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1"),
+            )
+            model = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+            choices = [os.path.splitext(f)[0] for f in video_files]
+            list_str = "、".join(choices)
+
+            resp = client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": rf"""从以下列表中选一个最适合「{prompt}」的，只返回名称本身：{list_str}"""}],
+                max_tokens=50, temperature=0.1,
+            )
+            matched = resp.choices[0].message.content.strip().strip('"\'').strip()
+            print(f"[DeepSeek] 原始返回: '{matched}'")
+            for f in video_files:
+                name = os.path.splitext(f)[0]
+                if name == matched or name in matched or matched in name:
+                    return f"/api/videos/提醒/{f}"
+        except Exception as e:
+            print(f"[DeepSeek] API调用失败: {e}")
+
+    # ── Keyword fallback ──
+    keywords = {
+        "奶奶吃药.mp4": ["药", "吃药", "服药", "药丸", "药品"],
+        "提醒上合唱课.mp4": ["合唱", "唱歌", "音乐", "歌", "唱"],
+        "提醒上插花课.mp4": ["插花", "花", "花艺", "花卉", "园艺"],
+    }
+    for f in video_files:
+        name = os.path.splitext(f)[0]
+        kws = keywords.get(f, [name])
+        if any(kw in prompt for kw in kws):
+            return f"/api/videos/提醒/{f}"
+
+    # Last resort
+    return f"/api/videos/提醒/{video_files[0]}"
 
 def _rewrite_to_caring(text: str) -> str:
     for key, val in {"吃药":"到吃药时间啦，先把药吃了，再喝点温水~","提醒":"温柔地提醒您","睡觉":"今天辛苦啦，早点休息，明天精神会更好~","吃饭":"该吃饭啦，今天的饭菜很香哦","运动":"康复时间到啦，我们慢慢活动一下~"}.items():
@@ -574,7 +647,12 @@ def create_task(req: TaskCreateRequest):
     task_id = _next_task_id; _next_task_id += 1
     scenario_id = LUNCH_SCENARIO_ID if req.video_mode == "digital" else None
     requires_reply = scenario_id == LUNCH_SCENARIO_ID
-    video = LUNCH_SCENARIO_VIDEOS["opening"] if requires_reply else (req.custom_video_url or f"/api/videos/{_select_video(req.content)}")
+    if requires_reply:
+        video = LUNCH_SCENARIO_VIDEOS["opening"]
+    elif req.video_mode == "reminder":
+        video = _safe_video_url(req.custom_video_url or _ai_match_video(req.content))
+    else:
+        video = _safe_video_url(req.custom_video_url or f"/api/videos/{_select_video(req.content)}")
     rewritten = _rewrite_to_caring(req.content)
 
     # Personalize greeting if child is specified
