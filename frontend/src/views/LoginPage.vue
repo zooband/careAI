@@ -6,7 +6,7 @@
         <!-- Brand -->
         <div class="text-center mb-10">
           <div class="text-5xl mb-3"><i class="fas fa-heart text-primary-500"></i></div>
-          <h1 class="text-3xl font-black text-gray-900">亲伴 AI</h1>
+          <h1 class="text-3xl font-black text-gray-900">家有 AI 宝</h1>
           <p class="text-base text-gray-500 mt-2">亲情数字陪伴助手</p>
         </div>
 

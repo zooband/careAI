@@ -4,7 +4,7 @@
     <nav class="flex-shrink-0 bg-white/80 backdrop-blur-md border-b border-primary-100 px-6 py-3 flex items-center justify-between">
       <div class="flex items-center gap-3">
         <router-link to="/" class="font-bold text-primary-700 flex items-center gap-1.5 text-base">
-          <i class="fas fa-heart text-primary-500"></i> 亲伴 AI
+          <i class="fas fa-heart text-primary-500"></i> 家有 AI 宝
         </router-link>
         <span class="text-sm px-3 py-1 bg-primary-100 text-primary-600 rounded-full font-medium">
           <i class="fas fa-wrench mr-1"></i>护工工作台
@@ -149,7 +149,7 @@
             <h3 class="text-lg font-bold text-gray-800"><i class="fas fa-clipboard-list mr-2"></i>创建照护任务</h3>
             <span class="text-sm text-gray-400 bg-gray-100 px-3 py-1 rounded-full">{{ selected.name }}</span>
           </div>
-          <div v-if="latestLunchFeedback"
+          <div v-if="latestLunchFeedback && latestLunchFeedback.id !== dismissedFeedbackId"
             class="mb-4 flex items-start gap-3 rounded-xl border px-4 py-3"
             :class="feedbackIntentClass(latestLunchFeedback.intent)">
             <span class="w-9 h-9 rounded-xl bg-white/70 flex items-center justify-center flex-shrink-0">
@@ -163,9 +163,12 @@
                 </span>
                 <span class="text-xs opacity-70">{{ formatTime(latestLunchFeedback.created_at) }}</span>
               </div>
-              <p class="text-sm mt-1 truncate">老人回复：{{ latestLunchFeedback.reply }}</p>
+              <p class="text-sm mt-1 truncate">{{ latestLunchFeedback.elderly_name || '老人' }}：{{ latestLunchFeedback.reply }}</p>
               <p class="text-xs mt-1 opacity-80 truncate">建议：{{ latestLunchFeedback.reply_text }}</p>
             </div>
+            <button @click="dismissedFeedbackId = latestLunchFeedback.id" class="text-gray-400 hover:text-gray-600 flex-shrink-0 self-start">
+              <i class="fas fa-times"></i>
+            </button>
           </div>
           <!-- Video Mode Selection -->
           <div class="flex gap-2 mb-4">
@@ -190,20 +193,8 @@
               <div class="text-[10px] text-gray-400">支持语音互动</div>
             </button>
           </div>
-          <!-- Reminder presets (reminder mode only) -->
-          <div v-if="videoMode==='reminder'" class="mb-3">
-            <div class="grid grid-cols-2 gap-2">
-              <button v-for="(p,i) in reminderPresets" :key="i"
-                @click="quickReminder(p)"
-                class="px-4 py-3 bg-white border border-gray-200 rounded-xl text-left hover:border-primary-300 hover:shadow-sm transition-all group"
-                :disabled="pushingPreset === i">
-                <div class="font-bold text-sm text-gray-700 group-hover:text-primary-700">{{ p.icon }} {{ p.label }}</div>
-                <div class="text-xs text-gray-400 mt-0.5 line-clamp-2">{{ p.content }}</div>
-              </button>
-            </div>
-          </div>
           <!-- Digital human photo upload (digital/interactive mode) -->
-            <div v-if="videoMode==='interactive'" class="mb-3 flex items-center gap-3">
+            <div v-if="videoMode==='digital'||videoMode==='interactive'" class="mb-3 flex items-center gap-3">
             <button @click="dhPhotoInput?.click()"
               class="px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm text-gray-600 hover:border-primary-300 hover:text-primary-600 transition-all flex items-center gap-2">
               <i class="fas fa-user-circle"></i>
@@ -244,12 +235,9 @@
             <button @click="createTask" :disabled="!taskContent.trim() || creating"
               class="btn-primary text-base px-6 py-3 flex items-center gap-2">
               <i v-if="creating" class="fas fa-spinner fa-spin"></i>
-              <i v-else class="fas fa-plus"></i>
-              创建任务
+              <i v-else class="fas fa-paper-plane"></i>
+              发送消息
             </button>
-            <span v-if="createResult" class="text-base" :class="createResult.success ? 'text-green-600' : 'text-red-600'">
-              {{ createResult.msg }}
-            </span>
           </div>
         </div>
 
@@ -376,6 +364,31 @@
       </div>
     </transition>
 
+    <!-- Review result notification -->
+    <transition name="fade">
+      <div v-if="reviewToast"
+        class="fixed top-20 right-6 z-50 w-[360px] rounded-2xl bg-white shadow-2xl border p-4"
+        :class="reviewToast.success ? 'border-green-200' : 'border-red-200'">
+        <div class="flex items-start gap-3">
+          <span class="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0"
+            :class="reviewToast.success ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'">
+            <i :class="reviewToast.success ? 'fas fa-check-circle' : 'fas fa-exclamation-triangle'"></i>
+          </span>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center justify-between gap-3">
+              <p class="font-bold text-gray-800">{{ reviewToast.success ? '审查通过' : '审查未通过' }}</p>
+              <button @click="reviewToast=null" class="text-gray-300 hover:text-gray-500">
+                <i class="fas fa-times"></i>
+              </button>
+            </div>
+            <p class="text-sm mt-1 line-clamp-2" :class="reviewToast.success ? 'text-green-600' : 'text-red-600'">
+              {{ reviewToast.msg }}
+            </p>
+          </div>
+        </div>
+      </div>
+    </transition>
+
     <!-- Add Elderly Modal -->
     <div v-if="showAddModal" class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center" @click.self="showAddModal=false">
       <div class="bg-white rounded-2xl shadow-xl p-6 w-[420px] max-h-[90vh] overflow-y-auto">
@@ -476,7 +489,6 @@ const taskContent = ref('')
 const taskMode = ref('immediate')
 const taskTime = ref('20:00')
 const creating = ref(false)
-const createResult = ref(null)
 const tasks = ref([])
 const newTrait = ref('')
 const savingProfile = ref(false)
@@ -495,7 +507,6 @@ const fileInput = ref(null)
 const videoFileInput = ref(null)
 const dhPhotoInput = ref(null)
 const videoMode = ref('reminder')
-const pushingPreset = ref(null)
 const customVideoUrl = ref(null)
 const customVideoName = ref(null)
 const dhPhotoUrl = ref(null)
@@ -505,6 +516,9 @@ const lunchFeedback = ref([])
 const latestLunchFeedback = computed(() => lunchFeedback.value[0] || null)
 const feedbackToast = ref(null)
 const videoReviewToast = ref(null)
+const reviewToast = ref(null)
+let reviewToastTimer = null
+const dismissedFeedbackId = ref(null)
 let pendingUploadTarget = null
 let searchTimer = null
 let feedbackTimer = null
@@ -775,7 +789,8 @@ function handleLogout() { logout(); router.push('/') }
 async function createTask() {
   if (!taskContent.value.trim() || !selected.value) return
   creating.value = true
-  createResult.value = { success:true, msg:'🔎 正在审查合法性...' }
+  if (reviewToastTimer) clearTimeout(reviewToastTimer)
+  reviewToast.value = { success: true, msg: '🔎 正在审查内容合法性...' }
   await new Promise(resolve => setTimeout(resolve, 1000))
   const payload = {
     elderly_id: selected.value.id, elderly_name: selected.value.name, elderly_avatar: selected.value.avatar,
@@ -793,60 +808,22 @@ async function createTask() {
     const res = await fetch('/api/tasks', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) })
     if (!res.ok) {
       const err = await res.json()
-      createResult.value = { success:false, msg:`❌ ${err.detail || '内容不合法，已被拦截'}` }
+      reviewToast.value = { success:false, msg:`❌ ${err.detail || '内容不合法，已被拦截'}` }
       return
     }
     const data = await res.json()
     tasks.value.unshift(data.task)
-    createResult.value = { success:true, msg:`✅ 审核通过，已向老人端发送信息` }
+    reviewToast.value = { success:true, msg:'✅ 审核通过，已向老人端发送信息' }
+    reviewToastTimer = setTimeout(() => { reviewToast.value = null }, 5000)
     if (data.task.video_mode === 'reminder') console.log('[DeepSeek] 匹配视频:', data.task.video_url)
     taskContent.value = ''
-  } catch (e) { createResult.value = { success:false, msg:`❌ 网络错误: ${e.message}` }
+  } catch (e) {
+    reviewToast.value = { success:false, msg:`❌ 网络错误: ${e.message}` }
   } finally { creating.value = false }
 }
 async function deleteTask(id) {
   try { await fetch(`/api/tasks/${id}`, { method:'DELETE' }); tasks.value = tasks.value.filter(t => t.id !== id) }
   catch (_) {}
-}
-
-const reminderPresets = [
-  { icon:'💊', label:'吃药提醒', content:'到吃药时间了，先把药吃了，再喝点温水~' },
-  { icon:'🏃', label:'康复运动', content:'康复时间到啦，我们慢慢活动一下，不着急~' },
-  { icon:'🍚', label:'吃饭提醒', content:'该吃饭啦，今天的饭菜很香哦，趁热吃~' },
-  { icon:'🌙', label:'睡觉提醒', content:'今天辛苦啦，早点休息，明天精神会更好~' },
-  { icon:'💕', label:'暖心问候', content:'今天过得怎么样？要照顾好自己，我一直在~' },
-  { icon:'☀️', label:'早安问候', content:'早上好呀，又是美好的一天，记得吃早餐哦~' },
-]
-
-async function quickReminder(preset) {
-  if (!selected.value) return
-  pushingPreset.value = reminderPresets.indexOf(preset)
-  const payload = {
-    elderly_id: selected.value.id, elderly_name: selected.value.name, elderly_avatar: selected.value.avatar,
-    content: preset.content, profile_text: profileText.value,
-    mode: 'immediate', scheduled_time: null,
-    child_id: null, child_name: null,
-    photo_url: null, child_photo_url: null,
-    video_mode: 'reminder',
-    custom_video_url: null,
-    digital_human_photo_url: null,
-  }
-  try {
-    const res = await fetch('/api/tasks', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) })
-    if (!res.ok) {
-      const err = await res.json()
-      createResult.value = { success:false, msg:`❌ ${err.detail || '发送失败'}` }
-      return
-    }
-    const data = await res.json()
-    tasks.value.unshift(data.task)
-    console.log('[DeepSeek] 匹配视频:', data.task.video_url)
-    createResult.value = { success:true, msg:`✅ 已推送「${preset.label}」` }
-  } catch (e) {
-    createResult.value = { success:false, msg:`❌ 网络错误: ${e.message}` }
-  } finally {
-    pushingPreset.value = null
-  }
 }
 
 onMounted(async () => {
@@ -872,5 +849,6 @@ onMounted(async () => {
 onUnmounted(() => {
   if (feedbackTimer) clearInterval(feedbackTimer)
   if (videoReviewTimer) clearInterval(videoReviewTimer)
+  if (reviewToastTimer) clearTimeout(reviewToastTimer)
 })
 </script>

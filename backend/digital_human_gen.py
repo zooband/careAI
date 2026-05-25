@@ -1,5 +1,5 @@
 """
-亲伴 AI — 数字人视频生成模块（OpenAI Sora API）
+家有 AI 宝 — 数字人视频生成模块（OpenAI Sora API）
 
 输入数字人图片、prompt，输出一段数字人视频（不可交互）。
 API密钥从 .env 读取 OPENAI_API_KEY。

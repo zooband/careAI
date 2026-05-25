@@ -4,7 +4,7 @@
     <nav class="flex-shrink-0 bg-white/80 backdrop-blur-md border-b border-primary-100 px-6 py-3 flex items-center justify-between">
       <div class="flex items-center gap-3">
         <router-link to="/" class="font-bold text-primary-700 flex items-center gap-1.5 text-base">
-          <i class="fas fa-heart text-primary-500"></i> 亲伴 AI
+          <i class="fas fa-heart text-primary-500"></i> 家有 AI 宝
         </router-link>
         <span class="text-sm px-3 py-1 bg-accent/10 text-accent-dark rounded-full font-medium">
           <i class="fas fa-tv mr-1"></i>老人终端
@@ -12,69 +12,65 @@
       </div>
       <div class="flex items-center gap-4">
         <span class="text-sm text-gray-500">{{ currentElderly.avatar }} {{ currentElderly.name }}</span>
-        <div class="flex items-center gap-1.5 text-sm text-gray-400">
-          <span class="w-2 h-2 rounded-full" :class="connected?'bg-green-400':'bg-red-400'"></span>
-          {{ connected ? '在线' : '重连中...' }}
-        </div>
         <button @click="handleLogout" class="text-sm text-gray-400 hover:text-red-500 transition-colors">
           <i class="fas fa-sign-out-alt mr-1"></i>退出
         </button>
       </div>
     </nav>
 
-    <!-- New push notification -->
-    <transition name="slide">
-      <div v-if="incomingTask"
-        class="flex-shrink-0 mx-6 mt-2 px-5 py-4 bg-gradient-to-r from-primary-600 to-primary-500 rounded-2xl shadow-lg
-               flex items-center gap-4 text-white cursor-pointer"
-        @click="playIncoming">
-        <i class="fas fa-bell text-2xl animate-pulse"></i>
-        <div class="flex-1">
-          <p class="text-lg font-bold">新的照护消息！点击播放</p>
-          <p class="text-sm text-white/80 truncate">{{ incomingTask.rewritten || incomingTask.content }}</p>
-        </div>
-        <button @click.stop="dismissIncoming" class="text-white/60 hover:text-white text-xl">
-          <i class="fas fa-times"></i>
-        </button>
-      </div>
-    </transition>
-
-    <!-- Content -->
-    <div class="flex-1 flex flex-col px-6 pb-4 overflow-hidden min-h-0 pt-4">
-      <!-- Welcome -->
-      <div class="flex-shrink-0 flex items-center gap-3 mb-4">
-        <span class="text-3xl">{{ currentElderly.avatar }}</span>
-        <span class="text-xl font-bold text-gray-800">{{ currentElderly.name }}，欢迎回来</span>
-        <span class="text-sm text-gray-400 ml-auto">
-          <i class="fas fa-check-circle text-green-500 mr-1"></i>今日 {{ history.length }} 条已读
-        </span>
-      </div>
-
-      <!-- History -->
-      <div class="flex-shrink-0 flex items-center gap-2 mb-3 mt-1">
-        <span class="text-base font-bold text-gray-600"><i class="fas fa-clock-rotate mr-1.5"></i>历史记录</span>
-      </div>
-      <div class="flex-1 overflow-y-auto min-h-0">
-        <div v-if="history.length === 0" class="text-center text-gray-400 text-base pt-8">
-          <i class="fas fa-inbox mr-2"></i>暂无播放记录
-        </div>
-        <div v-for="(item,i) in history" :key="i"
-          class="flex items-center gap-4 px-4 py-3 mb-2 bg-white/50 rounded-xl border border-gray-100/50">
-          <span class="flex-shrink-0 w-10 h-10 rounded-xl bg-primary-100 flex items-center justify-center">
-            <i class="fas fa-play text-primary-600"></i>
+    <!-- Incoming task toasts (stacked top-right) -->
+    <div class="fixed top-20 right-6 z-50 flex flex-col gap-2 max-w-sm">
+      <div v-for="(toast, i) in pendingToasts" :key="toast.id"
+        @click="playToast(toast)"
+        class="bg-white rounded-2xl shadow-xl border border-primary-100 p-4 cursor-pointer hover:shadow-lg transition-shadow animate-[slideIn_0.3s_ease]">
+        <div class="flex items-start gap-3">
+          <span class="w-9 h-9 rounded-xl bg-gradient-to-br from-primary-500 to-accent flex items-center justify-center flex-shrink-0">
+            <i class="fas fa-bell text-white text-sm"></i>
           </span>
           <div class="flex-1 min-w-0">
-            <p class="font-medium text-gray-700 truncate">{{ item.title || item.rewritten }}</p>
-            <p class="text-sm text-gray-400">{{ formatTime(item.played_at || item.pushed_at) }}</p>
+            <div class="flex items-center justify-between gap-2">
+              <p class="font-bold text-gray-800 text-sm">新的照护消息</p>
+              <button @click.stop="dismissToast(toast.id)" class="text-gray-300 hover:text-gray-500 flex-shrink-0">
+                <i class="fas fa-times"></i>
+              </button>
+            </div>
+            <p class="text-sm text-gray-600 mt-1 line-clamp-2">{{ toast.content }}</p>
           </div>
-          <button @click="playVideo(item.video_url, item.title)"
-            class="text-sm text-primary-600 hover:text-primary-800 flex-shrink-0 font-medium">
-            <i class="fas fa-rotate-right mr-1"></i>再看一次
-          </button>
         </div>
       </div>
     </div>
-    <div class="flex-shrink-0 text-center pb-3 text-sm text-gray-400">AI 亲情陪伴助手 · 由家人授权创建</div>
+
+    <!-- Content — WeChat-style message feed -->
+    <div class="flex-1 flex flex-col px-6 pb-2 overflow-hidden min-h-0 pt-3">
+      <!-- Welcome -->
+      <div class="flex-shrink-0 flex items-center gap-3 mb-2">
+        <span class="text-3xl">{{ currentElderly.avatar }}</span>
+        <div class="flex-1 min-w-0">
+          <span class="text-lg font-bold text-gray-800">{{ currentElderly.name }}</span>
+          <span class="text-sm text-gray-400 ml-2">今日 {{ history.length }} 条消息</span>
+        </div>
+        <span class="w-2 h-2 rounded-full" :class="connected?'bg-green-400':'bg-red-400'"></span>
+      </div>
+
+      <!-- Message feed -->
+      <div ref="feedRef" class="flex-1 overflow-y-auto min-h-0 space-y-3 py-2">
+        <div v-if="history.length === 0" class="text-center text-gray-400 text-base pt-12">
+          <i class="fas fa-inbox mr-2"></i>暂无消息
+        </div>
+        <div v-for="(item,i) in history" :key="i"
+          @click="playHistoryItem(item)"
+          class="flex gap-3 px-4 py-3 bg-white rounded-2xl border border-gray-100/80 shadow-sm cursor-pointer hover:bg-primary-50/50 transition-colors">
+          <span class="flex-shrink-0 w-10 h-10 rounded-full bg-primary-100 flex items-center justify-center mt-0.5">
+            <i class="fas fa-play text-primary-600 text-sm ml-0.5"></i>
+          </span>
+          <div class="flex-1 min-w-0">
+            <p class="font-medium text-gray-800 leading-snug">{{ item.rewritten || item.title || item.content }}</p>
+            <p class="text-xs text-gray-400 mt-1">{{ formatTime(item.pushed_at || item.played_at) }}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="flex-shrink-0 text-center pb-2 text-xs text-gray-400">AI 亲情陪伴助手 · 由家人授权创建</div>
 
     <!-- Floating Mic Button -->
     <button @click="startListening"
@@ -115,7 +111,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { getAuth, logout } from '../auth'
 
@@ -124,14 +120,33 @@ const auth = getAuth()
 const history = ref([])
 const currentElderly = ref({ name: auth?.user?.name||'王奶奶', avatar: auth?.user?.avatar||'👵' })
 const connected = ref(true)
-const incomingTask = ref(null)
 const elderlyId = auth?.user?.id || 1
 const listening = ref(false)
 const speechResult = ref(null)
+const feedRef = ref(null)
+const SEEN_KEY = 'qinban_seen_ids'
+const TOAST_KEY = 'qinban_pending_toasts'
+const pendingToasts = ref(loadToasts())
 let pollTimer = null
+let seenTaskIds = new Set(loadSeenIds())
+let toastIdCounter = pendingToasts.value.length + 1
+
+function loadToasts() {
+  try { return JSON.parse(sessionStorage.getItem(TOAST_KEY) || '[]') } catch { return [] }
+}
+function saveToasts() {
+  sessionStorage.setItem(TOAST_KEY, JSON.stringify(pendingToasts.value))
+}
+function loadSeenIds() {
+  try { return JSON.parse(sessionStorage.getItem(SEEN_KEY) || '[]') } catch { return [] }
+}
+function saveSeenIds() {
+  sessionStorage.setItem(SEEN_KEY, JSON.stringify([...seenTaskIds]))
+}
+watch(pendingToasts, saveToasts, { deep: true })
 
 
-function handleLogout() { logout(); router.push('/') }
+function handleLogout() { sessionStorage.removeItem(TOAST_KEY); sessionStorage.removeItem(SEEN_KEY); logout(); router.push('/') }
 
 function startPolling() { pollTimer = setInterval(pollPending, 3000); pollPending() }
 function stopPolling() { if (pollTimer) clearInterval(pollTimer) }
@@ -142,35 +157,49 @@ async function pollPending() {
     const data = await res.json()
     connected.value = true
     if (data.pending?.length) {
-      const task = data.pending[0]
-      incomingTask.value = task
-      setTimeout(() => { if (incomingTask.value === task) playIncoming() }, 1500)
+      for (const task of data.pending) {
+        if (seenTaskIds.has(task.id)) continue
+        seenTaskIds.add(task.id)
+        try {
+          await fetch('/api/tasks/ack', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({task_id:task.id}) })
+        } catch(_) {}
+        const entry = { ...task, played_at: new Date().toISOString() }
+        history.value.unshift(entry)
+        const toastId = toastIdCounter++
+        pendingToasts.value.unshift({ id: toastId, taskId: task.id, content: task.rewritten || task.content, video_url: task.video_url, mode: task.video_mode || 'interactive', title: task.rewritten || task.content, scenario_id: task.scenario_id || '', requires_reply: !!task.requires_reply })
+      }
+      saveSeenIds()
+      nextTick(() => { if (feedRef.value) feedRef.value.scrollTop = 0 })
     }
   } catch (_) { connected.value = false }
 }
 
-async function playIncoming() {
-  const task = incomingTask.value; if (!task) return
-  incomingTask.value = null
-  try { await fetch('/api/tasks/ack', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({task_id:task.id}) }) } catch(_) {}
-  history.value.unshift({ ...task, played_at: new Date().toISOString() })
+function playToast(toast) {
+  dismissToast(toast.id)
   router.push({ name:'elderly-player', query:{
-    url: task.video_url,
-    title: task.rewritten || task.content,
-    duration:'15',
-    mode: task.video_mode || 'interactive',
-    task_id: task.id,
-    elderly_id: task.elderly_id || elderlyId,
-    scenario: task.scenario_id || '',
-    requires_reply: task.requires_reply ? '1' : '',
+    url: toast.video_url, title: toast.title || '视频消息', duration: '15',
+    mode: toast.mode || 'interactive',
+    scenario: toast.scenario_id || '',
+    requires_reply: toast.requires_reply ? '1' : '',
   } })
 }
-function dismissIncoming() { incomingTask.value = null }
-function playVideo(url, title, videoMode) {
-  router.push({ name:'elderly-player', query:{ url, title:title||'视频消息', duration:'15', mode: videoMode || 'prerecorded' } })
+function dismissToast(id) {
+  pendingToasts.value = pendingToasts.value.filter(t => t.id !== id)
+}
+
+function playHistoryItem(item) {
+  router.push({ name:'elderly-player', query:{
+    url: item.video_url, title: item.title || item.rewritten || '视频消息', duration: '15',
+    mode: item.mode || item.video_mode || 'prerecorded',
+    scenario: item.scenario_id || '',
+    requires_reply: item.requires_reply ? '1' : '',
+  } })
 }
 async function loadHistory() {
-  try { const res=await fetch('/api/tasks/history'); const d=await res.json(); if(d.history) history.value=d.history.reverse() } catch(_) {}
+  try {
+    const res=await fetch('/api/tasks/history'); const d=await res.json()
+    if(d.history) { history.value=d.history.reverse(); d.history.forEach(h => { if (h.task_id) seenTaskIds.add(h.task_id) }); saveSeenIds() }
+  } catch(_) {}
 }
 function formatTime(iso) {
   if(!iso) return ''; const d=new Date(iso)
@@ -198,9 +227,7 @@ onUnmounted(() => stopPolling())
 </script>
 
 <style scoped>
-.slide-enter-active,.slide-leave-active{transition:all .4s ease}
-.slide-enter-from{transform:translateY(-120%);opacity:0}
-.slide-leave-to{transform:translateY(-120%);opacity:0}
 .fade-enter-active,.fade-leave-active{transition:opacity .25s ease}
 .fade-enter-from,.fade-leave-to{opacity:0}
+@keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
 </style>

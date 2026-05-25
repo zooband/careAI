@@ -4,7 +4,7 @@
     <nav class="flex-shrink-0 bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between">
       <div class="flex items-center gap-3">
         <router-link to="/" class="font-bold text-primary-700 flex items-center gap-1.5 text-base">
-          <i class="fas fa-heart text-primary-500"></i> 亲伴 AI
+          <i class="fas fa-heart text-primary-500"></i> 家有 AI 宝
         </router-link>
         <span class="text-sm px-3 py-1 bg-gray-100 text-gray-600 rounded-full font-medium">
           <i class="fas fa-shield-alt mr-1"></i>管理后台

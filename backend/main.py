@@ -1,11 +1,11 @@
 """
-亲伴 AI - Backend API
+家有 AI 宝 - Backend API
   - SQLite user store with auth
   - Task management (immediate/scheduled/daily)
   - Content review, video generation
   - Admin user CRUD
 """
-import os, random, json, sqlite3, urllib.request
+import os, random, json, sqlite3, threading, urllib.request
 from datetime import datetime, date
 from typing import Optional
 from dotenv import load_dotenv
@@ -14,12 +14,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from video_review import review_video
+from digital_human_gen import generate_digital_human_video
 
 # Load .env from project root (parent of backend/)
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 load_dotenv(os.path.join(PROJECT_ROOT, '.env'))
 
-app = FastAPI(title="亲伴 AI API", version="0.2.0")
+app = FastAPI(title="家有 AI 宝 API", version="0.2.0")
 app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_credentials=True,
     allow_methods=["*"], allow_headers=["*"],
@@ -188,6 +189,20 @@ def _video_exists(video_path: str) -> bool:
         return True  # external URL, can't verify
     rel = video_path[len("/api/videos/"):]
     return os.path.exists(os.path.join(VIDEOS_DIR, rel))
+
+def _check_sora_connectivity() -> bool:
+    """Quick-check whether the OpenAI API endpoint is reachable."""
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        return False
+    try:
+        import urllib.request
+        req = urllib.request.Request("https://api.openai.com/v1/models", method="HEAD")
+        req.add_header("Authorization", f"Bearer {api_key}")
+        urllib.request.urlopen(req, timeout=3)
+        return True
+    except Exception:
+        return False
 
 def _safe_video_url(video_path: str) -> str:
     """Return video_path if the file exists, otherwise a random known-good demo video."""
@@ -665,6 +680,54 @@ def create_task(req: TaskCreateRequest):
         suggestion = video_review.get("suggestion") or "请人工复核或调整视频后再推送。"
         raise HTTPException(400, f"视频AI审查未通过（{decision}）：{suggestion}")
 
+    # 5. Digital human video generation (Sora) — for interactive mode
+    dh_generating = False
+    generating_hint = ""
+    if req.video_mode == "interactive" and req.digital_human_photo_url:
+        photo_filename = os.path.basename(req.digital_human_photo_url)
+        photo_path = os.path.join(UPLOADS_DIR, photo_filename)
+
+        if os.path.exists(photo_path):
+            dh_generating = True
+            output_filename = f"dh_{task_id}_{datetime.now().strftime('%Y%m%d%H%M%S')}.mp4"
+            output_path = os.path.join(VIDEOS_DIR, output_filename)
+            sora_url = f"/api/videos/{output_filename}"
+
+            def _generate(task_id_=task_id, img_path=photo_path,
+                          prompt_=req.content, out_path=output_path,
+                          sora_url_=sora_url):
+                try:
+                    print(f"\n  [Sora] 开始为任务 #{task_id_} 生成数字人视频...")
+                    result_path = generate_digital_human_video(
+                        image_path=img_path, prompt=prompt_, output_path=out_path,
+                    )
+                    print(f"  [Sora] 任务 #{task_id_} 视频生成完成: {result_path}")
+                    # Swap to Sora video on success
+                    if task_id_ in task_store:
+                        task_store[task_id_]["video_url"] = sora_url_
+                        task_store[task_id_]["dh_generating"] = False
+                except Exception as e:
+                    err_msg = str(e)
+                    if "Connection error" in err_msg or "connect" in err_msg.lower() or "timed out" in err_msg:
+                        print(f"  [Sora] OpenAI API 不可达，任务 #{task_id_} 使用预制视频推送")
+                    else:
+                        print(f"  [Sora] 任务 #{task_id_} 视频生成失败: {err_msg}")
+                    if task_id_ in task_store:
+                        task_store[task_id_]["dh_generating"] = False
+                        task_store[task_id_]["dh_generate_error"] = str(e)
+                    # Falls back to the initial fallback video_url
+
+            # Check connectivity before spawning background thread
+            _sora_available = _check_sora_connectivity()
+            if _sora_available:
+                threading.Thread(target=_generate, daemon=True).start()
+                generating_hint = "（数字人视频正在后台生成中，生成完成后将在老人端显示）"
+            else:
+                print(f"  [Sora] OpenAI API 不可达，跳过数字人视频生成，使用预制视频")
+                dh_generating = False
+        else:
+            print(f"  [WARNING] 数字人图片不存在: {photo_path}，使用预制视频")
+
     print(f"\n{'='*60}\n  [TASK] #{task_id} created: {req.elderly_name} | child:{req.child_name or 'AI'}\n  content: {req.content}\n{'='*60}\n")
     task = {"id":task_id,"elderly_id":req.elderly_id,"elderly_name":req.elderly_name,
             "elderly_avatar":req.elderly_avatar,"content":req.content,"rewritten":rewritten,
@@ -677,10 +740,11 @@ def create_task(req: TaskCreateRequest):
             "requires_reply":requires_reply,
             "video_review":video_review,
             "digital_human_photo_url":req.digital_human_photo_url,
+            "dh_generating":dh_generating,
             "ai_signature":"AI 亲情陪伴助手，由家人授权创建",
             "created_at":datetime.now().isoformat(),"pushed":False,"pushed_at":None}
     task_store[task_id] = task
-    return {"success": True, "task": task}
+    return {"success": True, "task": task, "generating_hint": generating_hint}
 
 @app.get("/api/tasks/pending")
 def pending_tasks(elderly_id: int = 1):
@@ -748,7 +812,7 @@ def list_lunch_feedback(limit: int = 20):
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "service": "亲伴 AI API", "db": os.path.exists(DB_PATH)}
+    return {"status": "ok", "service": "家有 AI 宝 API", "db": os.path.exists(DB_PATH)}
 
 def _review_content(text: str) -> tuple:
     """Internal content review. Returns (passed, risk_level, issues, rewritten_text)."""

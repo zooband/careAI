@@ -4,7 +4,7 @@
     <header class="flex-shrink-0 px-6 sm:px-10 py-3 flex items-center justify-between">
       <div class="flex items-center gap-2">
         <span class="text-2xl">💜</span>
-        <span class="text-lg font-bold text-primary-700">亲伴 AI</span>
+        <span class="text-lg font-bold text-primary-700">家有 AI 宝</span>
       </div>
       <div class="flex items-center gap-2 text-xs text-gray-400">
         <span class="hidden sm:inline">AI 亲情陪伴助手 · 由家人授权创建</span>
@@ -50,7 +50,7 @@
             <div class="bg-gray-900 rounded-2xl p-2 shadow-2xl">
               <div class="bg-gradient-to-br from-primary-100 via-warm-50 to-primary-200 rounded-xl overflow-hidden aspect-[9/16] relative">
                 <div class="bg-primary-700 text-white text-[10px] px-3 py-1.5 flex items-center justify-between">
-                  <span>亲伴 AI</span>
+                  <span>家有 AI 宝</span>
                   <span>09:41</span>
                 </div>
                 <div class="p-3 flex flex-col items-center justify-center" style="height:calc(100% - 26px)">
@@ -79,7 +79,7 @@
 
     <!-- Footer -->
     <div class="flex-shrink-0 text-center pb-3 text-xs text-gray-400">
-      亲伴 AI · 面向银发养老场景的亲情数字陪伴 Agent
+      家有 AI 宝 · 面向银发养老场景的亲情数字陪伴 Agent
     </div>
   </div>
 </template>
