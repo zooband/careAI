@@ -132,6 +132,7 @@ class TaskCreateRequest(BaseModel):
     photo_url: Optional[str] = None; child_photo_url: Optional[str] = None
     video_mode: str = "prerecorded"
     custom_video_url: Optional[str] = None
+    digital_human_photo_url: Optional[str] = None
 
 class ChildCreateRequest(BaseModel):
     name: str; avatar: str = "👤"; photo: str = ""; relationship: str = ""; personality: str = ""
@@ -436,6 +437,7 @@ def create_task(req: TaskCreateRequest):
             "photo_url":req.photo_url,"child_photo_url":req.child_photo_url,
             "video_url":video,"duration_seconds":15,
             "video_mode":req.video_mode,
+            "digital_human_photo_url":req.digital_human_photo_url,
             "ai_signature":"AI 亲情陪伴助手，由家人授权创建",
             "created_at":datetime.now().isoformat(),"pushed":False,"pushed_at":None}
     task_store[task_id] = task

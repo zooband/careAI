@@ -183,6 +183,16 @@
             <span v-if="customVideoUrl" class="text-xs text-green-600"><i class="fas fa-check-circle mr-1"></i>已上传</span>
             <span v-else class="text-xs text-gray-400">选填，默认使用 AI 推荐视频</span>
           </div>
+          <!-- Digital human photo upload (digital/interactive mode) -->
+          <div v-if="videoMode==='digital'||videoMode==='interactive'" class="mb-3 flex items-center gap-3">
+            <button @click="dhPhotoInput?.click()"
+              class="px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm text-gray-600 hover:border-primary-300 hover:text-primary-600 transition-all flex items-center gap-2">
+              <i class="fas fa-user-circle"></i>
+              {{ dhPhotoName || '上传数字人头像' }}
+            </button>
+            <span v-if="dhPhotoUrl" class="text-xs text-green-600"><i class="fas fa-check-circle mr-1"></i>已上传</span>
+            <span v-else class="text-xs text-gray-400">必填，用于生成数字人视频</span>
+          </div>
           <textarea v-model="taskContent" rows="3" placeholder="例如：提醒王奶奶晚上8点吃降压药"
             class="w-full bg-warm-50 border border-warm-200 rounded-xl p-4 text-base text-gray-700 resize-none outline-none focus:border-primary-300 placeholder-gray-300 leading-relaxed" />
           <div class="mt-3 flex items-center gap-3">
@@ -346,6 +356,7 @@
     <!-- Hidden file input for photo uploads -->
     <input ref="fileInput" type="file" accept="image/*" class="hidden" @change="onFileSelected" />
     <input ref="videoFileInput" type="file" accept="video/*" class="hidden" @change="onVideoSelected" />
+    <input ref="dhPhotoInput" type="file" accept="image/*" class="hidden" @change="onDhPhotoSelected" />
   </div>
 </template>
 
@@ -379,9 +390,12 @@ const childForm = ref({ name:'', avatar:'👤', relationship:'', personality:'' 
 const selectedPhotoUrl = ref('')
 const fileInput = ref(null)
 const videoFileInput = ref(null)
+const dhPhotoInput = ref(null)
 const videoMode = ref('prerecorded')
 const customVideoUrl = ref(null)
 const customVideoName = ref(null)
+const dhPhotoUrl = ref(null)
+const dhPhotoName = ref(null)
 const uploadingVideo = ref(false)
 let pendingUploadTarget = null
 let searchTimer = null
@@ -539,6 +553,27 @@ async function onVideoSelected(e) {
   }
 }
 
+async function onDhPhotoSelected(e) {
+  const file = e.target.files?.[0]
+  if (!file) return
+  dhPhotoName.value = file.name
+  const form = new FormData()
+  form.append('file', file)
+  try {
+    const res = await fetch('/api/upload', { method:'POST', body: form })
+    const d = await res.json()
+    if (d.success) {
+      dhPhotoUrl.value = d.url
+    } else {
+      dhPhotoName.value = null
+    }
+  } catch (_) {
+    dhPhotoName.value = null
+  } finally {
+    e.target.value = ''
+  }
+}
+
 const profileText = computed(() => {
   const e = selected.value
   if (!e) return ''
@@ -579,6 +614,7 @@ async function createTask() {
     child_photo_url: selectedChild.value?.photo || null,
     video_mode: videoMode.value,
     custom_video_url: customVideoUrl.value,
+    digital_human_photo_url: dhPhotoUrl.value,
   }
   try {
     const res = await fetch('/api/tasks', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) })
