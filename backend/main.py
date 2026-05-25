@@ -158,6 +158,23 @@ SENSITIVE_PATTERNS = {
 }
 
 # ── Helpers ──────────────────────────────────────────────
+def _video_exists(video_path: str) -> bool:
+    """Check whether a video URL (starting with /api/videos/) maps to a real file."""
+    if not video_path.startswith("/api/videos/"):
+        return True  # external URL, can't verify
+    rel = video_path[len("/api/videos/"):]
+    return os.path.exists(os.path.join(VIDEOS_DIR, rel))
+
+def _safe_video_url(video_path: str) -> str:
+    """Return video_path if the file exists, otherwise a random known-good demo video."""
+    if _video_exists(video_path):
+        return video_path
+    print(f"  [video] 文件不存在，回退默认视频: {video_path}")
+    fallback = random.choice(["medication_reminder.mp4", "daily_greeting.mp4",
+                              "dinner_reminder.mp4", "bedtime_reminder.mp4",
+                              "exercise_reminder.mp4", "emotional_comfort.mp4"])
+    return f"/api/videos/{fallback}"
+
 def _select_video(text: str) -> str:
     if any(kw in text for kw in ["药","吃药","服药"]): return "medication_reminder.mp4"
     if any(kw in text for kw in ["饭","吃"]): return "dinner_reminder.mp4"
@@ -479,9 +496,9 @@ def create_task(req: TaskCreateRequest):
     global _next_task_id
     task_id = _next_task_id; _next_task_id += 1
     if req.video_mode == "reminder":
-        video = req.custom_video_url or _ai_match_video(req.content)
+        video = _safe_video_url(req.custom_video_url or _ai_match_video(req.content))
     else:
-        video = req.custom_video_url or f"/api/videos/{_select_video(req.content)}"
+        video = _safe_video_url(req.custom_video_url or f"/api/videos/{_select_video(req.content)}")
     rewritten = _rewrite_to_caring(req.content)
 
     # Personalize greeting if child is specified
