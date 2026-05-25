@@ -189,7 +189,16 @@ async function playIncoming() {
   incomingTask.value = null
   try { await fetch('/api/tasks/ack', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({task_id:task.id}) }) } catch(_) {}
   history.value.unshift({ ...task, played_at: new Date().toISOString() })
-  router.push({ name:'elderly-player', query:{ url: task.video_url, title: task.rewritten || task.content, duration:'15', mode: task.video_mode || 'interactive' } })
+  router.push({ name:'elderly-player', query:{
+    url: task.video_url,
+    title: task.rewritten || task.content,
+    duration:'15',
+    mode: task.video_mode || 'interactive',
+    task_id: task.id,
+    elderly_id: task.elderly_id || elderlyId,
+    scenario: task.scenario_id || '',
+    requires_reply: task.requires_reply ? '1' : '',
+  } })
 }
 function dismissIncoming() { incomingTask.value = null }
 function playVideo(url, title, videoMode) {

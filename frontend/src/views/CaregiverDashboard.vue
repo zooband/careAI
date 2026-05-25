@@ -149,6 +149,24 @@
             <h3 class="text-lg font-bold text-gray-800"><i class="fas fa-clipboard-list mr-2"></i>创建照护任务</h3>
             <span class="text-sm text-gray-400 bg-gray-100 px-3 py-1 rounded-full">{{ selected.name }}</span>
           </div>
+          <div v-if="latestLunchFeedback"
+            class="mb-4 flex items-start gap-3 rounded-xl border px-4 py-3"
+            :class="feedbackIntentClass(latestLunchFeedback.intent)">
+            <span class="w-9 h-9 rounded-xl bg-white/70 flex items-center justify-center flex-shrink-0">
+              <i :class="feedbackIntentIcon(latestLunchFeedback.intent)"></i>
+            </span>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2">
+                <span class="font-bold text-sm">最新反馈</span>
+                <span class="text-xs px-2 py-0.5 rounded-full bg-white/70">
+                  {{ feedbackIntentLabel(latestLunchFeedback.intent) }}
+                </span>
+                <span class="text-xs opacity-70">{{ formatTime(latestLunchFeedback.created_at) }}</span>
+              </div>
+              <p class="text-sm mt-1 truncate">老人回复：{{ latestLunchFeedback.reply }}</p>
+              <p class="text-xs mt-1 opacity-80 truncate">建议：{{ latestLunchFeedback.reply_text }}</p>
+            </div>
+          </div>
           <!-- Video Mode Selection -->
           <div class="flex gap-2 mb-4">
             <button @click="videoMode='prerecorded'"
@@ -163,7 +181,6 @@
                 videoMode==='digital'?'border-blue-500 bg-blue-50 shadow-sm':'border-gray-200 bg-white/70 hover:border-gray-300']">
               <i class="fas fa-robot text-xl mb-0.5" :class="videoMode==='digital'?'text-blue-500':'text-gray-400'"></i>
               <div class="font-bold text-xs" :class="videoMode==='digital'?'text-blue-700':'text-gray-600'">数字人视频</div>
-              <div class="text-[10px] text-gray-400">无法交互</div>
             </button>
             <button @click="videoMode='interactive'"
               :class="['flex-1 py-3 px-2 rounded-xl border-2 transition-all text-center',
@@ -184,7 +201,7 @@
             <span v-else class="text-xs text-gray-400">选填，默认使用 AI 推荐视频</span>
           </div>
           <!-- Digital human photo upload (digital/interactive mode) -->
-          <div v-if="videoMode==='digital'||videoMode==='interactive'" class="mb-3 flex items-center gap-3">
+            <div v-if="videoMode==='interactive'" class="mb-3 flex items-center gap-3">
             <button @click="dhPhotoInput?.click()"
               class="px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm text-gray-600 hover:border-primary-300 hover:text-primary-600 transition-all flex items-center gap-2">
               <i class="fas fa-user-circle"></i>
@@ -193,7 +210,7 @@
             <span v-if="dhPhotoUrl" class="text-xs text-green-600"><i class="fas fa-check-circle mr-1"></i>已上传</span>
             <span v-else class="text-xs text-gray-400">必填，用于生成数字人视频</span>
           </div>
-          <textarea v-model="taskContent" rows="3" placeholder="例如：提醒王奶奶晚上8点吃降压药"
+          <textarea v-model="taskContent" rows="3" :placeholder="videoMode==='digital' ? '例如：询问王奶奶午饭吃得怎么样' : '例如：提醒王奶奶晚上8点吃降压药'"
             class="w-full bg-warm-50 border border-warm-200 rounded-xl p-4 text-base text-gray-700 resize-none outline-none focus:border-primary-300 placeholder-gray-300 leading-relaxed" />
           <div class="mt-3 flex items-center gap-3">
             <span class="text-sm text-gray-500 flex-shrink-0"><i class="fas fa-user-tie mr-1"></i>数字人身份:</span>
@@ -231,6 +248,37 @@
             <span v-if="createResult" class="text-base" :class="createResult.success ? 'text-green-600' : 'text-red-600'">
               {{ createResult.msg }}
             </span>
+          </div>
+        </div>
+
+        <!-- Lunch Feedback -->
+        <div class="flex-shrink-0 bg-white/70 backdrop-blur-sm rounded-2xl border border-white/50 shadow p-5">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="text-lg font-bold text-gray-800"><i class="fas fa-face-smile mr-2"></i>老人反馈心情</h3>
+            <span class="text-sm text-gray-400">{{ lunchFeedback.length }} 条反馈</span>
+          </div>
+          <div v-if="lunchFeedback.length === 0" class="text-sm text-gray-400 py-2">
+            午饭互动完成后，这里会显示老人回复和系统判断。
+          </div>
+          <div v-else class="space-y-2 max-h-36 overflow-y-auto">
+            <div v-for="item in lunchFeedback" :key="item.id"
+              class="flex items-start gap-3 p-3 bg-white rounded-xl border border-gray-100">
+              <span class="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+                :class="feedbackIntentClass(item.intent)">
+                <i :class="feedbackIntentIcon(item.intent)"></i>
+              </span>
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2">
+                  <span class="font-medium text-gray-800">{{ item.elderly_name || '老人' }}</span>
+                  <span class="text-xs px-2 py-0.5 rounded-full" :class="feedbackIntentClass(item.intent)">
+                    {{ feedbackIntentLabel(item.intent) }}
+                  </span>
+                  <span class="text-xs text-gray-400">{{ formatTime(item.created_at) }}</span>
+                </div>
+                <p class="text-sm text-gray-600 mt-1 truncate">老人回复：{{ item.reply }}</p>
+                <p class="text-xs text-gray-400 mt-1 truncate">护工提示：{{ item.reply_text }}</p>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -272,6 +320,59 @@
     <div v-else class="flex-1 flex items-center justify-center text-gray-400 text-lg">
       <i class="fas fa-arrow-up mr-2"></i>请从上方选择一个老人
     </div>
+
+    <!-- New feedback notification -->
+    <transition name="fade">
+      <div v-if="feedbackToast"
+        class="fixed top-20 right-6 z-50 w-[360px] rounded-2xl bg-white shadow-2xl border border-primary-100 p-4">
+        <div class="flex items-start gap-3">
+          <span class="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0"
+            :class="feedbackIntentClass(feedbackToast.intent)">
+            <i :class="feedbackIntentIcon(feedbackToast.intent)"></i>
+          </span>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center justify-between gap-3">
+              <p class="font-bold text-gray-800">收到老人午饭反馈</p>
+              <button @click="feedbackToast=null" class="text-gray-300 hover:text-gray-500">
+                <i class="fas fa-times"></i>
+              </button>
+            </div>
+            <p class="text-sm text-gray-500 mt-1">
+              {{ feedbackToast.elderly_name || '老人' }} · {{ feedbackIntentLabel(feedbackToast.intent) }}
+            </p>
+            <p class="text-sm text-gray-700 mt-2 line-clamp-2">“{{ feedbackToast.reply }}”</p>
+            <p class="text-xs text-gray-400 mt-2 line-clamp-2">{{ feedbackToast.reply_text }}</p>
+          </div>
+        </div>
+      </div>
+    </transition>
+
+    <!-- Video review notification -->
+    <transition name="fade">
+      <div v-if="videoReviewToast"
+        class="fixed top-20 right-6 z-50 w-[390px] rounded-2xl bg-white shadow-2xl border border-red-100 p-4">
+        <div class="flex items-start gap-3">
+          <span class="w-11 h-11 rounded-xl bg-red-100 text-red-700 flex items-center justify-center flex-shrink-0">
+            <i class="fas fa-shield-halved"></i>
+          </span>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center justify-between gap-3">
+              <p class="font-bold text-gray-800">视频AI审查提醒</p>
+              <button @click="videoReviewToast=null" class="text-gray-300 hover:text-gray-500">
+                <i class="fas fa-times"></i>
+              </button>
+            </div>
+            <p class="text-sm text-red-600 mt-1">
+              {{ videoReviewToast.elderly_name || '老人' }} · {{ videoReviewToast.decision === 'block' ? '已拦截' : '需调整/复核' }}
+            </p>
+            <p class="text-sm text-gray-700 mt-2 line-clamp-2">{{ videoReviewToast.care_task }}</p>
+            <p class="text-xs text-gray-500 mt-2 line-clamp-2">
+              {{ videoReviewToast.suggestion || (videoReviewToast.hard_fail_reasons || []).join('；') || '请人工复核后再推送。' }}
+            </p>
+          </div>
+        </div>
+      </div>
+    </transition>
 
     <!-- Add Elderly Modal -->
     <div v-if="showAddModal" class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center" @click.self="showAddModal=false">
@@ -361,7 +462,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { getAuth, logout } from '../auth'
 
@@ -397,8 +498,18 @@ const customVideoName = ref(null)
 const dhPhotoUrl = ref(null)
 const dhPhotoName = ref(null)
 const uploadingVideo = ref(false)
+const lunchFeedback = ref([])
+const latestLunchFeedback = computed(() => lunchFeedback.value[0] || null)
+const feedbackToast = ref(null)
+const videoReviewToast = ref(null)
 let pendingUploadTarget = null
 let searchTimer = null
+let feedbackTimer = null
+let videoReviewTimer = null
+let feedbackInitialized = false
+let feedbackSeenIds = new Set()
+let videoReviewInitialized = false
+let videoReviewSeenIds = new Set()
 
 function selectElder(elder) {
   selected.value = elder
@@ -599,11 +710,70 @@ function formatTime(iso) {
   return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
 }
 
+function feedbackIntentLabel(intent) {
+  return { salty:'偏咸反馈', good:'满意积极', no_appetite:'胃口不佳' }[intent] || '满意积极'
+}
+function feedbackIntentIcon(intent) {
+  return { salty:'fas fa-droplet', good:'fas fa-star', no_appetite:'fas fa-bowl-food' }[intent] || 'fas fa-star'
+}
+function feedbackIntentClass(intent) {
+  return {
+    salty:'bg-orange-100 text-orange-700',
+    good:'bg-green-100 text-green-700',
+    no_appetite:'bg-amber-100 text-amber-700',
+  }[intent] || 'bg-green-100 text-green-700'
+}
+
+async function loadLunchFeedback() {
+  try {
+    const res = await fetch('/api/scenarios/lunch/feedback')
+    const data = await res.json()
+    const feedback = data.feedback || []
+    if (!feedbackInitialized) {
+      feedbackSeenIds = new Set(feedback.map(item => item.id))
+      feedbackInitialized = true
+    } else {
+      const fresh = feedback.filter(item => !feedbackSeenIds.has(item.id))
+      if (fresh.length) {
+        feedbackToast.value = fresh[0]
+        setTimeout(() => {
+          if (feedbackToast.value?.id === fresh[0].id) feedbackToast.value = null
+        }, 8000)
+      }
+      fresh.forEach(item => feedbackSeenIds.add(item.id))
+    }
+    lunchFeedback.value = feedback
+  } catch (_) {}
+}
+
+async function loadVideoReviewNotices() {
+  try {
+    const res = await fetch('/api/video-review/notices')
+    const data = await res.json()
+    const notices = data.notices || []
+    if (!videoReviewInitialized) {
+      videoReviewSeenIds = new Set(notices.map(item => item.id))
+      videoReviewInitialized = true
+    } else {
+      const fresh = notices.filter(item => !videoReviewSeenIds.has(item.id))
+      if (fresh.length) {
+        videoReviewToast.value = fresh[0]
+        setTimeout(() => {
+          if (videoReviewToast.value?.id === fresh[0].id) videoReviewToast.value = null
+        }, 10000)
+      }
+      fresh.forEach(item => videoReviewSeenIds.add(item.id))
+    }
+  } catch (_) {}
+}
+
 function handleLogout() { logout(); router.push('/') }
 
 async function createTask() {
   if (!taskContent.value.trim() || !selected.value) return
-  creating.value = true; createResult.value = null
+  creating.value = true
+  createResult.value = { success:true, msg:'🔎 正在审查合法性...' }
+  await new Promise(resolve => setTimeout(resolve, 1000))
   const payload = {
     elderly_id: selected.value.id, elderly_name: selected.value.name, elderly_avatar: selected.value.avatar,
     content: taskContent.value, profile_text: profileText.value,
@@ -625,7 +795,7 @@ async function createTask() {
     }
     const data = await res.json()
     tasks.value.unshift(data.task)
-    createResult.value = { success:true, msg:`✅ 任务 #${data.task.id} 已创建` }
+    createResult.value = { success:true, msg:`✅ 审核通过，已向老人端发送信息` }
     taskContent.value = ''
   } catch (e) { createResult.value = { success:false, msg:`❌ 网络错误: ${e.message}` }
   } finally { creating.value = false }
@@ -649,6 +819,14 @@ onMounted(async () => {
       selected.value = elderlyList.value[0]
       loadChildren(selected.value.id)
     }
+    await loadLunchFeedback()
+    await loadVideoReviewNotices()
+    feedbackTimer = setInterval(loadLunchFeedback, 3000)
+    videoReviewTimer = setInterval(loadVideoReviewNotices, 3000)
   } catch (_) {}
+})
+onUnmounted(() => {
+  if (feedbackTimer) clearInterval(feedbackTimer)
+  if (videoReviewTimer) clearInterval(videoReviewTimer)
 })
 </script>

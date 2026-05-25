@@ -31,6 +31,7 @@
         :src="videoUrl"
         class="w-full h-full object-contain"
         @ended="onEnded"
+        @error="onVideoError"
         @play="isPlaying = true"
         @pause="isPlaying = false"
         playsinline
@@ -48,6 +49,44 @@
         </div>
       </button>
 
+      <!-- Lunch scenario reply input -->
+      <div
+        v-if="lunchAwaitingReply"
+        class="absolute inset-0 bg-black/75 flex flex-col items-center justify-center gap-5 p-6"
+      >
+        <div class="w-full max-w-xl bg-white/95 rounded-2xl p-6 shadow-2xl">
+          <div class="flex items-center gap-3 mb-4">
+            <span class="w-10 h-10 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center">
+              <i class="fas fa-comment-dots"></i>
+            </span>
+            <div>
+              <p class="text-gray-900 text-lg font-bold">请输入奶奶的回复</p>
+              <p class="text-gray-500 text-sm">系统会判断午饭反馈，并播放对应的下一段视频</p>
+            </div>
+          </div>
+          <textarea
+            v-model="lunchReply"
+            rows="3"
+            class="w-full rounded-xl border border-gray-200 p-4 text-base outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+            placeholder="例如：太咸了 / 很好吃，有我爱吃的清蒸鱼 / 都不爱吃，没胃口"
+          ></textarea>
+          <div v-if="lunchError" class="mt-3 text-sm text-red-600">{{ lunchError }}</div>
+          <div class="mt-5 flex justify-end gap-3">
+            <button @click="goBack" class="px-5 py-3 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50">
+              返回
+            </button>
+            <button
+              @click="submitLunchReply"
+              :disabled="lunchSubmitting || !lunchReply.trim()"
+              class="px-6 py-3 rounded-xl bg-blue-600 text-white font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <i v-if="lunchSubmitting" class="fas fa-spinner fa-spin mr-2"></i>
+              确认并播放
+            </button>
+          </div>
+        </div>
+      </div>
+
       <!-- Ended overlay -->
       <div
         v-if="hasEnded"
@@ -62,6 +101,26 @@
           </button>
           <button @click="goBack" class="btn-outline !border-white/30 !text-white text-lg px-8 py-4 flex items-center gap-2">
             <i class="fas fa-arrow-left"></i> 返回列表
+          </button>
+        </div>
+      </div>
+
+      <!-- Placeholder when demo video assets are not uploaded yet -->
+      <div
+        v-if="videoError"
+        class="absolute inset-0 bg-black/80 flex flex-col items-center justify-center gap-5 p-6"
+      >
+        <i class="fas fa-film text-6xl text-white/70"></i>
+        <p class="text-white text-2xl font-bold">视频素材待上传</p>
+        <p class="text-white/60 text-center max-w-lg">{{ videoUrl }}</p>
+        <p v-if="lunchResult?.reply_text" class="text-blue-200 text-center max-w-xl">{{ lunchResult.reply_text }}</p>
+        <div class="flex gap-3">
+          <button v-if="isLunchScenario && !lunchBranchPlayed" @click="showLunchReplyInput"
+            class="px-6 py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700">
+            输入老人回复
+          </button>
+          <button @click="goBack" class="px-6 py-3 bg-white/20 text-white rounded-xl font-medium hover:bg-white/30">
+            返回
           </button>
         </div>
       </div>
@@ -144,10 +203,25 @@ const interrupted = ref(false)
 const interruptReason = ref('')
 const interruptIssues = ref([])
 const transcript = ref(null)
+const scenarioId = ref('')
+const taskId = ref(null)
+const elderlyId = ref(null)
+const lunchAwaitingReply = ref(false)
+const lunchReply = ref('')
+const lunchSubmitting = ref(false)
+const lunchError = ref('')
+const lunchResult = ref(null)
+const lunchBranchPlayed = ref(false)
+const videoError = ref(false)
+const isLunchScenario = ref(false)
 
 onMounted(() => {
   videoUrl.value = route.query.url || '/api/videos/medication_reminder.mp4'
   videoMode.value = route.query.mode || 'preview'
+  scenarioId.value = route.query.scenario || ''
+  taskId.value = route.query.task_id || null
+  elderlyId.value = route.query.elderly_id || null
+  isLunchScenario.value = scenarioId.value === 'lunch_checkin' || route.query.requires_reply === '1'
 
   setTimeout(() => {
     loading.value = false
@@ -164,6 +238,7 @@ function play() {
     hasEnded.value = false
     interrupted.value = false
     transcript.value = null
+    videoError.value = false
     videoRef.value.play()
   }
 }
@@ -172,6 +247,8 @@ function replay() {
   hasEnded.value = false
   interrupted.value = false
   transcript.value = null
+  videoError.value = false
+  lunchAwaitingReply.value = false
   if (videoRef.value) {
     videoRef.value.currentTime = 0
     videoRef.value.play()
@@ -180,7 +257,62 @@ function replay() {
 
 function onEnded() {
   isPlaying.value = false
+  if (isLunchScenario.value && !lunchBranchPlayed.value) {
+    showLunchReplyInput()
+    return
+  }
   hasEnded.value = true
+}
+
+function onVideoError() {
+  loading.value = false
+  isPlaying.value = false
+  videoError.value = true
+}
+
+function showLunchReplyInput() {
+  hasEnded.value = false
+  interrupted.value = false
+  videoError.value = false
+  lunchAwaitingReply.value = true
+}
+
+async function submitLunchReply() {
+  if (!lunchReply.value.trim() || lunchSubmitting.value) return
+  lunchSubmitting.value = true
+  lunchError.value = ''
+  try {
+    const res = await fetch('/api/scenarios/lunch/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        reply: lunchReply.value,
+        task_id: taskId.value ? Number(taskId.value) : null,
+        elderly_id: elderlyId.value ? Number(elderlyId.value) : null,
+      }),
+    })
+    const data = await res.json()
+    if (!res.ok || !data.success) {
+      throw new Error(data.detail || '分析失败，请重试')
+    }
+    lunchResult.value = data
+    lunchAwaitingReply.value = false
+    lunchBranchPlayed.value = true
+    hasEnded.value = false
+    videoError.value = false
+    videoUrl.value = data.video_url
+    transcript.value = { text: lunchReply.value, rewritten_text: data.reply_text }
+    setTimeout(() => {
+      if (videoRef.value) {
+        videoRef.value.load()
+        videoRef.value.play().catch(() => { isPlaying.value = false })
+      }
+    }, 100)
+  } catch (e) {
+    lunchError.value = e.message || '网络错误，请重试'
+  } finally {
+    lunchSubmitting.value = false
+  }
 }
 
 function goBack() {

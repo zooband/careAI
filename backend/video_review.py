@@ -4,7 +4,7 @@
 视频安全审查模块，提取自原 test_lingya_video.py。
 API密钥从项目根目录 .env 读取，不再硬编码。
 """
-import os, json, base64
+import os, json, base64, urllib.request
 from dotenv import load_dotenv
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -50,9 +50,6 @@ def review_video(video_path: str, care_task: str, approved_script: str = "",
             "issues": [],
             "suggestion": "请检查视频路径是否正确。"
         }
-
-    from openai import OpenAI
-    client = OpenAI(api_key=LINGYA_API_KEY, base_url=LINGYA_BASE_URL)
 
     # Base64 编码视频
     file_size_mb = os.path.getsize(video_path) / 1024 / 1024
@@ -122,19 +119,45 @@ def review_video(video_path: str, care_task: str, approved_script: str = "",
 """
 
     try:
-        resp = client.chat.completions.create(
-            model=LINGYA_MODEL,
-            messages=[{
-                "role": "user",
-                "content": [
-                    {"type": "video_url", "video_url": {"url": video_data_url, "fps": 1}},
-                    {"type": "text", "text": prompt}
-                ]
-            }],
-            max_tokens=1200,
-            temperature=0.1
+        base_url = (LINGYA_BASE_URL or "https://api.lingyaai.cn/v1").rstrip("/")
+        if not base_url.endswith("/v1"):
+            base_url = f"{base_url}/v1"
+        payload = json.dumps(
+            {
+                "model": LINGYA_MODEL,
+                "messages": [{
+                    "role": "user",
+                    "content": [
+                        {"type": "video_url", "video_url": {"url": video_data_url, "fps": 1}},
+                        {"type": "text", "text": prompt},
+                    ],
+                }],
+                "max_tokens": 1200,
+                "temperature": 0.1,
+            },
+            ensure_ascii=False,
+        ).encode("utf-8")
+        req = urllib.request.Request(
+            f"{base_url}/chat/completions",
+            data=payload,
+            headers={
+                "Authorization": f"Bearer {LINGYA_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
         )
-        result = json.loads(resp.choices[0].message.content)
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            raw = json.loads(resp.read().decode("utf-8"))
+        content = raw["choices"][0]["message"]["content"].strip()
+        if content.startswith("```"):
+            content = content.strip("`")
+            if content.lower().startswith("json"):
+                content = content[4:].strip()
+        start = content.find("{")
+        end = content.rfind("}")
+        if start >= 0 and end >= start:
+            content = content[start:end + 1]
+        result = json.loads(content)
         issues = []
         for dim, res in result.get("dimension_results", {}).items():
             if res.get("status") == "block":

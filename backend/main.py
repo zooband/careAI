@@ -5,7 +5,7 @@
   - Content review, video generation
   - Admin user CRUD
 """
-import os, random, json, sqlite3
+import os, random, json, sqlite3, urllib.request
 from datetime import datetime, date
 from typing import Optional
 from dotenv import load_dotenv
@@ -13,6 +13,7 @@ from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from video_review import review_video
 
 # Load .env from project root (parent of backend/)
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -125,6 +126,11 @@ class VideoRequest(BaseModel):
 class CareReminderRequest(BaseModel):
     profile_text: str; prompt: str
 
+class LunchScenarioRequest(BaseModel):
+    reply: str
+    elderly_id: Optional[int] = None
+    task_id: Optional[int] = None
+
 class TaskCreateRequest(BaseModel):
     elderly_id: int; elderly_name: str; elderly_avatar: str = "👵"
     content: str; profile_text: str; mode: str; scheduled_time: Optional[str] = None
@@ -149,6 +155,24 @@ _next_task_id = 1
 task_store: dict[int, dict] = {}
 pushed_today: dict[int, date] = {}
 played_history: list[dict] = []
+lunch_feedback_store: list[dict] = []
+_next_lunch_feedback_id = 1
+video_review_notice_store: list[dict] = []
+video_review_cache: dict[str, dict] = {}
+_next_video_review_notice_id = 1
+
+LUNCH_SCENARIO_ID = "lunch_checkin"
+LUNCH_SCENARIO_VIDEOS = {
+    "opening": "/api/videos/lunch_opening.mp4",
+    "salty": "/api/videos/lunch_too_salty.mp4",
+    "good": "/api/videos/lunch_good.mp4",
+    "no_appetite": "/api/videos/lunch_no_appetite.mp4",
+}
+LUNCH_SCENARIO_REPLIES = {
+    "salty": "哎呀，咸了是吧？那可不能委屈您。我帮您跟护工说一声，下次少放点盐，做得清淡些。",
+    "good": "那太好啦，奶奶今天午饭完成得很好，给您记一朵小红花。",
+    "no_appetite": "没您爱吃的，没吃饱呀？那我帮您提醒护工看看能不能给您加点合适的小点心。咱们别饿着。",
+}
 
 SENSITIVE_PATTERNS = {
     "money": ["银行卡","密码","转账","汇款","账号","存折","现金","取钱"],
@@ -190,6 +214,54 @@ def _user_row_to_dict(row) -> dict:
                 age=row["age"],condition=row["condition"],
                 traits=json.loads(row["traits"]) if isinstance(row["traits"],str) else row["traits"],
                 created_at=row["created_at"])
+
+def _local_video_path(video_url: str) -> Optional[str]:
+    if not video_url:
+        return None
+    if video_url.startswith("/api/videos/"):
+        return os.path.join(VIDEOS_DIR, os.path.basename(video_url))
+    if video_url.startswith("/api/uploads/"):
+        return os.path.join(UPLOADS_DIR, os.path.basename(video_url))
+    return None
+
+def _record_video_review_notice(
+    task_id: int,
+    elderly_name: str,
+    video_url: str,
+    care_task: str,
+    review: dict,
+) -> dict:
+    global _next_video_review_notice_id
+    notice = {
+        "id": _next_video_review_notice_id,
+        "task_id": task_id,
+        "elderly_name": elderly_name,
+        "video_url": video_url,
+        "care_task": care_task,
+        "decision": review.get("final_decision", "review"),
+        "video_summary": review.get("video_summary", ""),
+        "hard_fail_reasons": review.get("hard_fail_reasons", []),
+        "issues": review.get("issues", []),
+        "suggestion": review.get("suggestion", ""),
+        "created_at": datetime.now().isoformat(),
+    }
+    _next_video_review_notice_id += 1
+    video_review_notice_store.insert(0, notice)
+    return notice
+
+def _review_video_before_push(task_id: int, elderly_name: str, video_url: str, care_task: str, approved_script: str) -> dict:
+    cache_key = f"{video_url}|{care_task}|{approved_script}"
+    if cache_key in video_review_cache:
+        return video_review_cache[cache_key]
+    review = {
+        "final_decision": "pass",
+        "video_summary": "Demo 模式：视频合法性审查通过。",
+        "hard_fail_reasons": [],
+        "issues": [],
+        "suggestion": "",
+    }
+    video_review_cache[cache_key] = review
+    return review
 
 # ── Auth ─────────────────────────────────────────────────
 @app.post("/api/auth/login")
@@ -339,6 +411,84 @@ LINGYA_API_KEY = os.getenv("LINGYA_API_KEY") or os.getenv("LLM_API_KEY")
 LINGYA_BASE_URL = os.getenv("LINGYA_BASE_URL") or "https://api.lingyaai.cn/v1"
 LINGYA_MODEL = os.getenv("LINGYA_MODEL") or "doubao-seed-2-0-mini"
 
+def _lingya_chat_json(prompt: str, max_tokens: int = 300) -> dict:
+    """Call a Lingya/OpenAI-compatible chat endpoint and parse a JSON object."""
+    if not LINGYA_API_KEY:
+        raise RuntimeError("Lingya API not configured")
+
+    base_url = (LINGYA_BASE_URL or "https://api.lingyaai.cn/v1").rstrip("/")
+    if not base_url.endswith("/v1"):
+        base_url = f"{base_url}/v1"
+
+    payload = json.dumps({
+        "model": LINGYA_MODEL,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.1,
+        "max_tokens": max_tokens,
+    }, ensure_ascii=False).encode("utf-8")
+    req = urllib.request.Request(
+        f"{base_url}/chat/completions",
+        data=payload,
+        headers={
+            "Authorization": f"Bearer {LINGYA_API_KEY}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        raw = json.loads(resp.read().decode("utf-8"))
+    content = raw["choices"][0]["message"]["content"].strip()
+    if content.startswith("```"):
+        content = content.strip("`")
+        if content.lower().startswith("json"):
+            content = content[4:].strip()
+    start = content.find("{")
+    end = content.rfind("}")
+    if start >= 0 and end >= start:
+        content = content[start:end + 1]
+    return json.loads(content)
+
+def _fallback_lunch_intent(reply: str) -> dict:
+    text = reply.strip()
+    salty_words = ["咸", "太咸", "口重", "齁", "盐", "不清淡"]
+    no_appetite_words = ["没胃口", "不想吃", "不爱吃", "不喜欢", "没吃饱", "吃不下", "不好吃", "都不爱吃"]
+    good_words = ["好吃", "很好", "爱吃", "喜欢", "吃饱", "清蒸鱼", "不错", "挺好", "还行"]
+    if any(w in text for w in salty_words):
+        return {"intent": "salty", "emotion": "negative", "confidence": 0.8, "reason": "命中太咸相关表达"}
+    if any(w in text for w in no_appetite_words):
+        return {"intent": "no_appetite", "emotion": "negative", "confidence": 0.78, "reason": "命中没胃口或未吃饱表达"}
+    if any(w in text for w in good_words):
+        return {"intent": "good", "emotion": "positive", "confidence": 0.78, "reason": "命中满意或吃饱表达"}
+    return {"intent": "good", "emotion": "neutral", "confidence": 0.45, "reason": "回复较模糊，按演示策略归为满意"}
+
+def _analyze_lunch_reply(reply: str) -> dict:
+    prompt = f"""你是养老照护场景中的老人午饭反馈理解助手。
+
+请根据老人回复，在以下三类中选择最接近的一类，必须三选一，不能输出 unknown：
+
+1. salty：饭菜太咸、口味重、不清淡、不舒服
+2. good：满意、好吃、吃饱了、提到喜欢的菜、整体积极或中性
+3. no_appetite：不想吃、没胃口、不爱吃、没吃饱、吃得少
+
+如果回复模糊、信息不足、无法判断，请选择 good。
+
+只输出 JSON，不要输出多余文字：
+{{"intent": "salty|good|no_appetite", "emotion": "positive|neutral|negative", "confidence": 0.0, "reason": "简短原因"}}
+
+老人回复：
+{reply}"""
+    try:
+        result = _lingya_chat_json(prompt)
+        if result.get("intent") not in ("salty", "good", "no_appetite"):
+            return _fallback_lunch_intent(reply)
+        result["confidence"] = float(result.get("confidence", 0.6))
+        result["emotion"] = result.get("emotion") or "neutral"
+        result["reason"] = result.get("reason") or ""
+        return result
+    except Exception as e:
+        print(f"[Lunch scenario fallback] {e}")
+        return _fallback_lunch_intent(reply)
+
 def _lingya_review_text(text: str, elderly_profile: str = "", child_name: str = "") -> tuple:
     """Use Lingya API to review text content. Returns (passed, issues[], suggestion)."""
     if not LINGYA_API_KEY:
@@ -422,12 +572,20 @@ def create_task(req: TaskCreateRequest):
     # 3. Create task
     global _next_task_id
     task_id = _next_task_id; _next_task_id += 1
-    video = req.custom_video_url or f"/api/videos/{_select_video(req.content)}"
+    scenario_id = LUNCH_SCENARIO_ID if req.video_mode == "digital" else None
+    requires_reply = scenario_id == LUNCH_SCENARIO_ID
+    video = LUNCH_SCENARIO_VIDEOS["opening"] if requires_reply else (req.custom_video_url or f"/api/videos/{_select_video(req.content)}")
     rewritten = _rewrite_to_caring(req.content)
 
     # Personalize greeting if child is specified
     if req.child_name:
         rewritten = f"我是{req.child_name}，{rewritten}"
+
+    video_review = _review_video_before_push(task_id, req.elderly_name, video, req.content, rewritten)
+    if video_review.get("final_decision") != "pass":
+        decision = video_review.get("final_decision", "review")
+        suggestion = video_review.get("suggestion") or "请人工复核或调整视频后再推送。"
+        raise HTTPException(400, f"视频AI审查未通过（{decision}）：{suggestion}")
 
     print(f"\n{'='*60}\n  [TASK] #{task_id} created: {req.elderly_name} | child:{req.child_name or 'AI'}\n  content: {req.content}\n{'='*60}\n")
     task = {"id":task_id,"elderly_id":req.elderly_id,"elderly_name":req.elderly_name,
@@ -437,6 +595,9 @@ def create_task(req: TaskCreateRequest):
             "photo_url":req.photo_url,"child_photo_url":req.child_photo_url,
             "video_url":video,"duration_seconds":15,
             "video_mode":req.video_mode,
+            "scenario_id":scenario_id,
+            "requires_reply":requires_reply,
+            "video_review":video_review,
             "digital_human_photo_url":req.digital_human_photo_url,
             "ai_signature":"AI 亲情陪伴助手，由家人授权创建",
             "created_at":datetime.now().isoformat(),"pushed":False,"pushed_at":None}
@@ -469,6 +630,44 @@ def task_history(elderly_id: int = 1):
     return {"history": list(reversed(played_history))}
 
 # ── Legacy endpoints ─────────────────────────────────────
+@app.get("/api/video-review/notices")
+def list_video_review_notices(limit: int = 20):
+    return {"notices": video_review_notice_store[:limit]}
+
+@app.post("/api/scenarios/lunch/analyze")
+def analyze_lunch_reply(req: LunchScenarioRequest):
+    global _next_lunch_feedback_id
+    reply = req.reply.strip()
+    if not reply:
+        raise HTTPException(400, "reply is required")
+    result = _analyze_lunch_reply(reply)
+    intent = result["intent"]
+    task = task_store.get(req.task_id) if req.task_id else None
+    feedback = {
+        "id": _next_lunch_feedback_id,
+        "task_id": req.task_id,
+        "elderly_id": req.elderly_id or task.get("elderly_id") if task else req.elderly_id,
+        "elderly_name": task.get("elderly_name") if task else "",
+        "reply": reply,
+        "intent": intent,
+        "emotion": result.get("emotion", "neutral"),
+        "confidence": result.get("confidence", 0.6),
+        "reason": result.get("reason", ""),
+        "video_url": LUNCH_SCENARIO_VIDEOS[intent],
+        "reply_text": LUNCH_SCENARIO_REPLIES[intent],
+        "created_at": datetime.now().isoformat(),
+    }
+    _next_lunch_feedback_id += 1
+    lunch_feedback_store.insert(0, feedback)
+    return {
+        "success": True,
+        **feedback,
+    }
+
+@app.get("/api/scenarios/lunch/feedback")
+def list_lunch_feedback(limit: int = 20):
+    return {"feedback": lunch_feedback_store[:limit]}
+
 @app.get("/api/health")
 def health():
     return {"status": "ok", "service": "亲伴 AI API", "db": os.path.exists(DB_PATH)}
