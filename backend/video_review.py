@@ -1,7 +1,7 @@
 """
 亲伴 AI — 视频安全审查模块（灵崖AI）
 
-原 test_lingya_video.py 的审查逻辑，提取为可复用的函数。
+视频安全审查模块，提取自原 test_lingya_video.py。
 API密钥从项目根目录 .env 读取，不再硬编码。
 """
 import os, json, base64
@@ -162,7 +162,7 @@ if __name__ == "__main__":
     video = sys.argv[1] if len(sys.argv) > 1 else ""
     task = sys.argv[2] if len(sys.argv) > 2 else "提醒王奶奶晚上8点吃降压药"
     if not video:
-        print("用法: python test_lingya_video.py <视频路径> [护工任务]")
+        print("用法: python video_review.py <视频路径> [护工任务]")
         sys.exit(1)
     result = review_video(video, task)
     print(json.dumps(result, ensure_ascii=False, indent=2))

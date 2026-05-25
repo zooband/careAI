@@ -7,8 +7,19 @@
           <i class="fas fa-arrow-left text-xl"></i>
           <span v-if="!isPlaying" class="text-sm">返回</span>
         </button>
-        <div v-if="!isPlaying" class="text-white/60 text-xs px-3 py-1 bg-white/10 rounded-full">
-          AI 亲情陪伴助手 · 由家人授权创建
+        <div v-if="!isPlaying" class="flex items-center gap-2">
+          <span class="text-white/60 text-xs px-3 py-1 bg-white/10 rounded-full">
+            AI 亲情陪伴助手 · 由家人授权创建
+          </span>
+          <span v-if="videoMode==='preview'" class="text-xs px-3 py-1 bg-primary-500/20 text-primary-300 rounded-full">
+            <i class="fas fa-video mr-1"></i>预制视频
+          </span>
+          <span v-else-if="videoMode==='digital'" class="text-xs px-3 py-1 bg-blue-500/20 text-blue-300 rounded-full">
+            <i class="fas fa-robot mr-1"></i>数字人视频
+          </span>
+          <span v-else class="text-xs px-3 py-1 bg-amber-500/20 text-amber-300 rounded-full">
+            <i class="fas fa-microphone mr-1"></i>可交互视频
+          </span>
         </div>
       </div>
     </div>
@@ -97,7 +108,7 @@
         <div class="text-center flex-1">
           <p class="text-white/50 text-sm">AI 亲情陪伴助手 · 由家人授权创建</p>
         </div>
-        <button @click="startListening" :disabled="hasEnded"
+        <button v-if="videoMode === 'interactive'" @click="startListening" :disabled="hasEnded"
           class="w-14 h-14 rounded-full shadow-xl flex items-center justify-center transition-all flex-shrink-0"
           :class="listening ? 'bg-red-500 scale-110 animate-pulse' : 'bg-white/20 hover:bg-white/30'">
           <i class="fas fa-microphone text-xl" :class="listening ? 'text-white' : 'text-white/80'"></i>
@@ -128,6 +139,7 @@ const isPlaying = ref(false)
 const hasEnded = ref(false)
 const loading = ref(true)
 const listening = ref(false)
+const videoMode = ref('preview')
 const interrupted = ref(false)
 const interruptReason = ref('')
 const interruptIssues = ref([])
@@ -135,6 +147,7 @@ const transcript = ref(null)
 
 onMounted(() => {
   videoUrl.value = route.query.url || '/api/videos/medication_reminder.mp4'
+  videoMode.value = route.query.mode || 'preview'
 
   setTimeout(() => {
     loading.value = false

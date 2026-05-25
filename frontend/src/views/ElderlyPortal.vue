@@ -50,9 +50,29 @@
         </span>
       </div>
 
-      <!-- Recommended Videos -->
-      <div class="flex-shrink-0 flex items-center gap-2 mb-3">
-        <span class="text-base font-bold text-gray-600"><i class="fas fa-video mr-1.5"></i>推荐视频</span>
+      <!-- Play Mode Selection -->
+      <div class="flex-shrink-0 flex gap-3 mb-4">
+        <button @click="playMode='preview'"
+          :class="['flex-1 py-4 px-2 rounded-2xl border-2 transition-all text-center',
+            playMode==='preview' ? 'border-primary-500 bg-primary-50 shadow-md' : 'border-gray-200 bg-white/70 hover:border-gray-300']">
+          <i class="fas fa-video text-2xl mb-1" :class="playMode==='preview'?'text-primary-500':'text-gray-400'"></i>
+          <div class="font-bold text-sm" :class="playMode==='preview'?'text-primary-700':'text-gray-600'">预制视频</div>
+          <div class="text-xs text-gray-400 mt-0.5">直接播放已有视频</div>
+        </button>
+        <button @click="playMode='digital'"
+          :class="['flex-1 py-4 px-2 rounded-2xl border-2 transition-all text-center',
+            playMode==='digital' ? 'border-blue-500 bg-blue-50 shadow-md' : 'border-gray-200 bg-white/70 hover:border-gray-300']">
+          <i class="fas fa-robot text-2xl mb-1" :class="playMode==='digital'?'text-blue-500':'text-gray-400'"></i>
+          <div class="font-bold text-sm" :class="playMode==='digital'?'text-blue-700':'text-gray-600'">数字人视频</div>
+          <div class="text-xs text-gray-400 mt-0.5">播放但无法交互</div>
+        </button>
+        <button @click="playMode='interactive'"
+          :class="['flex-1 py-4 px-2 rounded-2xl border-2 transition-all text-center',
+            playMode==='interactive' ? 'border-accent bg-amber-50 shadow-md' : 'border-gray-200 bg-white/70 hover:border-gray-300']">
+          <i class="fas fa-microphone text-2xl mb-1" :class="playMode==='interactive'?'text-accent':'text-gray-400'"></i>
+          <div class="font-bold text-sm" :class="playMode==='interactive'?'text-amber-700':'text-gray-600'">可交互视频</div>
+          <div class="text-xs text-gray-400 mt-0.5">支持语音互动</div>
+        </button>
       </div>
       <div class="flex-shrink-0 overflow-x-auto pb-3 -mx-6 px-6">
         <div class="flex gap-4" style="min-width:max-content">
@@ -153,6 +173,7 @@ const currentElderly = ref({ name: auth?.user?.name||'王奶奶', avatar: auth?.
 const connected = ref(true)
 const incomingTask = ref(null)
 const elderlyId = auth?.user?.id || 1
+const playMode = ref('preview')
 const listening = ref(false)
 const speechResult = ref(null)
 let pollTimer = null
@@ -189,11 +210,11 @@ async function playIncoming() {
   incomingTask.value = null
   try { await fetch('/api/tasks/ack', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({task_id:task.id}) }) } catch(_) {}
   history.value.unshift({ ...task, played_at: new Date().toISOString() })
-  playVideo(task.video_url, task.rewritten || task.content)
+  router.push({ name:'elderly-player', query:{ url: task.video_url, title: task.rewritten || task.content, duration:'15', mode: 'interactive' } })
 }
 function dismissIncoming() { incomingTask.value = null }
 function playVideo(url, title) {
-  router.push({ name:'elderly-player', query:{ url, title:title||'视频消息', duration:'15' } })
+  router.push({ name:'elderly-player', query:{ url, title:title||'视频消息', duration:'15', mode: playMode.value } })
 }
 async function loadHistory() {
   try { const res=await fetch('/api/tasks/history'); const d=await res.json(); if(d.history) history.value=d.history.reverse() } catch(_) {}
