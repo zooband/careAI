@@ -130,6 +130,8 @@ class TaskCreateRequest(BaseModel):
     content: str; profile_text: str; mode: str; scheduled_time: Optional[str] = None
     child_id: Optional[int] = None; child_name: Optional[str] = None
     photo_url: Optional[str] = None; child_photo_url: Optional[str] = None
+    video_mode: str = "prerecorded"
+    custom_video_url: Optional[str] = None
 
 class ChildCreateRequest(BaseModel):
     name: str; avatar: str = "👤"; photo: str = ""; relationship: str = ""; personality: str = ""
@@ -375,13 +377,15 @@ def _lingya_review_text(text: str, elderly_profile: str = "", child_name: str = 
         return None, [], str(e)
 
 # ── Upload ────────────────────────────────────────────────
-UPLOAD_ALLOWED = {"image/jpeg","image/png","image/webp","image/gif","image/bmp"}
+UPLOAD_ALLOWED = {"image/jpeg","image/png","image/webp","image/gif","image/bmp",
+                   "video/mp4","video/webm","video/avi","video/mov","video/quicktime"}
 
 @app.post("/api/upload")
 async def upload_file(file: UploadFile = File(...)):
     if file.content_type not in UPLOAD_ALLOWED:
-        raise HTTPException(400, f"不支持的文件类型: {file.content_type}，仅支持图片")
-    ext = {"image/jpeg":".jpg","image/png":".png","image/webp":".webp","image/gif":".gif","image/bmp":".bmp"}.get(file.content_type, ".bin")
+        raise HTTPException(400, f"不支持的文件类型: {file.content_type}，仅支持图片/视频")
+    ext = {"image/jpeg":".jpg","image/png":".png","image/webp":".webp","image/gif":".gif","image/bmp":".bmp",
+           "video/mp4":".mp4","video/webm":".webm","video/avi":".avi","video/mov":".mov","video/quicktime":".mov"}.get(file.content_type, ".bin")
     filename = f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{random.randint(1000,9999)}{ext}"
     path = os.path.join(UPLOADS_DIR, filename)
     with open(path, "wb") as f:
@@ -417,7 +421,7 @@ def create_task(req: TaskCreateRequest):
     # 3. Create task
     global _next_task_id
     task_id = _next_task_id; _next_task_id += 1
-    video = _select_video(req.content)
+    video = req.custom_video_url or f"/api/videos/{_select_video(req.content)}"
     rewritten = _rewrite_to_caring(req.content)
 
     # Personalize greeting if child is specified
@@ -430,7 +434,8 @@ def create_task(req: TaskCreateRequest):
             "profile_text":req.profile_text,"mode":req.mode,"scheduled_time":req.scheduled_time,
             "child_id":req.child_id,"child_name":req.child_name,
             "photo_url":req.photo_url,"child_photo_url":req.child_photo_url,
-            "video_url":f"/api/videos/{video}","duration_seconds":15,
+            "video_url":video,"duration_seconds":15,
+            "video_mode":req.video_mode,
             "ai_signature":"AI 亲情陪伴助手，由家人授权创建",
             "created_at":datetime.now().isoformat(),"pushed":False,"pushed_at":None}
     task_store[task_id] = task

@@ -149,6 +149,40 @@
             <h3 class="text-lg font-bold text-gray-800"><i class="fas fa-clipboard-list mr-2"></i>创建照护任务</h3>
             <span class="text-sm text-gray-400 bg-gray-100 px-3 py-1 rounded-full">{{ selected.name }}</span>
           </div>
+          <!-- Video Mode Selection -->
+          <div class="flex gap-2 mb-4">
+            <button @click="videoMode='prerecorded'"
+              :class="['flex-1 py-3 px-2 rounded-xl border-2 transition-all text-center',
+                videoMode==='prerecorded'?'border-primary-500 bg-primary-50 shadow-sm':'border-gray-200 bg-white/70 hover:border-gray-300']">
+              <i class="fas fa-video text-xl mb-0.5" :class="videoMode==='prerecorded'?'text-primary-500':'text-gray-400'"></i>
+              <div class="font-bold text-xs" :class="videoMode==='prerecorded'?'text-primary-700':'text-gray-600'">预制视频</div>
+              <div class="text-[10px] text-gray-400">可上传自定义视频</div>
+            </button>
+            <button @click="videoMode='digital'"
+              :class="['flex-1 py-3 px-2 rounded-xl border-2 transition-all text-center',
+                videoMode==='digital'?'border-blue-500 bg-blue-50 shadow-sm':'border-gray-200 bg-white/70 hover:border-gray-300']">
+              <i class="fas fa-robot text-xl mb-0.5" :class="videoMode==='digital'?'text-blue-500':'text-gray-400'"></i>
+              <div class="font-bold text-xs" :class="videoMode==='digital'?'text-blue-700':'text-gray-600'">数字人视频</div>
+              <div class="text-[10px] text-gray-400">无法交互</div>
+            </button>
+            <button @click="videoMode='interactive'"
+              :class="['flex-1 py-3 px-2 rounded-xl border-2 transition-all text-center',
+                videoMode==='interactive'?'border-accent bg-amber-50 shadow-sm':'border-gray-200 bg-white/70 hover:border-gray-300']">
+              <i class="fas fa-microphone text-xl mb-0.5" :class="videoMode==='interactive'?'text-accent':'text-gray-400'"></i>
+              <div class="font-bold text-xs" :class="videoMode==='interactive'?'text-amber-700':'text-gray-600'">可交互视频</div>
+              <div class="text-[10px] text-gray-400">支持语音互动</div>
+            </button>
+          </div>
+          <!-- Video file upload (prerecorded mode only) -->
+          <div v-if="videoMode==='prerecorded'" class="mb-3 flex items-center gap-3">
+            <button @click="videoFileInput?.click()"
+              class="px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm text-gray-600 hover:border-primary-300 hover:text-primary-600 transition-all flex items-center gap-2">
+              <i class="fas fa-upload"></i>
+              {{ customVideoName || '选择视频文件' }}
+            </button>
+            <span v-if="customVideoUrl" class="text-xs text-green-600"><i class="fas fa-check-circle mr-1"></i>已上传</span>
+            <span v-else class="text-xs text-gray-400">选填，默认使用 AI 推荐视频</span>
+          </div>
           <textarea v-model="taskContent" rows="3" placeholder="例如：提醒王奶奶晚上8点吃降压药"
             class="w-full bg-warm-50 border border-warm-200 rounded-xl p-4 text-base text-gray-700 resize-none outline-none focus:border-primary-300 placeholder-gray-300 leading-relaxed" />
           <div class="mt-3 flex items-center gap-3">
@@ -210,6 +244,7 @@
                   </div>
                   <div class="flex items-center gap-3 mt-1 text-sm text-gray-400">
                     <span>{{ modeLabel(t.mode) }}</span>
+                    <span>· {{ videoModeLabel(t.video_mode) }}</span>
                     <span v-if="t.scheduled_time">· {{ t.scheduled_time }}</span>
                     <span>· {{ t.elderly_name }}</span>
                     <span v-if="t.pushed_at" class="text-green-500">· <i class="fas fa-check-circle mr-0.5"></i>{{ formatTime(t.pushed_at) }}</span>
@@ -310,6 +345,7 @@
     </div>
     <!-- Hidden file input for photo uploads -->
     <input ref="fileInput" type="file" accept="image/*" class="hidden" @change="onFileSelected" />
+    <input ref="videoFileInput" type="file" accept="video/*" class="hidden" @change="onVideoSelected" />
   </div>
 </template>
 
@@ -342,6 +378,11 @@ const selectedChild = ref(null)
 const childForm = ref({ name:'', avatar:'👤', relationship:'', personality:'' })
 const selectedPhotoUrl = ref('')
 const fileInput = ref(null)
+const videoFileInput = ref(null)
+const videoMode = ref('prerecorded')
+const customVideoUrl = ref(null)
+const customVideoName = ref(null)
+const uploadingVideo = ref(false)
 let pendingUploadTarget = null
 let searchTimer = null
 
@@ -475,6 +516,29 @@ async function onFileSelected(e) {
   finally { pendingUploadTarget = null; e.target.value = '' }
 }
 
+async function onVideoSelected(e) {
+  const file = e.target.files?.[0]
+  if (!file) return
+  uploadingVideo.value = true
+  customVideoName.value = file.name
+  const form = new FormData()
+  form.append('file', file)
+  try {
+    const res = await fetch('/api/upload', { method:'POST', body: form })
+    const d = await res.json()
+    if (d.success) {
+      customVideoUrl.value = d.url
+    } else {
+      customVideoName.value = null
+    }
+  } catch (_) {
+    customVideoName.value = null
+  } finally {
+    uploadingVideo.value = false
+    e.target.value = ''
+  }
+}
+
 const profileText = computed(() => {
   const e = selected.value
   if (!e) return ''
@@ -487,6 +551,7 @@ const profileText = computed(() => {
 })
 
 function modeLabel(m) { return { immediate:'🚀 即时', scheduled:'⏰ 定时', daily:'🔁 每日' }[m]||m }
+function videoModeLabel(m) { return { prerecorded:'📹 预制', digital:'🤖 数字人', interactive:'🎤 可交互' }[m]||m||'📹 预制' }
 function statusLabel(t) {
   if (t.pushed) return '<i class="fas fa-check-circle mr-1"></i>已推送'
   if (t.mode === 'immediate') return '⏳ 待推送'
@@ -512,6 +577,8 @@ async function createTask() {
     child_name: selectedChild.value?.name || null,
     photo_url: selectedPhotoUrl.value || null,
     child_photo_url: selectedChild.value?.photo || null,
+    video_mode: videoMode.value,
+    custom_video_url: customVideoUrl.value,
   }
   try {
     const res = await fetch('/api/tasks', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) })
