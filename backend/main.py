@@ -51,6 +51,17 @@ def init_db():
             traits TEXT DEFAULT '[]',
             created_at TEXT DEFAULT (datetime('now','localtime'))
         );
+        CREATE TABLE IF NOT EXISTS children (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            elderly_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            avatar TEXT DEFAULT '👤',
+            relationship TEXT DEFAULT '',
+            personality TEXT DEFAULT '',
+            voice_profile TEXT DEFAULT '',
+            created_at TEXT DEFAULT (datetime('now','localtime')),
+            FOREIGN KEY (elderly_id) REFERENCES users(id)
+        );
     """)
     count = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
     if count == 0:
@@ -60,6 +71,9 @@ def init_db():
                 ('张三','123456','caregiver','👨',35,'高级护工','["耐心","专业"]'),
                 ('王奶奶','123456','elderly','👵',78,'阿尔兹海默症早期','["健忘","温和","喜欢听戏曲","不习惯被命令"]'),
                 ('李爷爷','123456','elderly','👴',82,'独居·轻度抑郁倾向','["思念子女","喜欢下棋","不太爱说话"]');
+            INSERT INTO children (elderly_id,name,avatar,relationship,personality) VALUES
+                (3,'王小明','👨','儿子','在外地工作，每周视频通话，性格温和有耐心'),
+                (4,'李华','👩','女儿','住在同城，每周回家看望，性格细心体贴');
         """)
     conn.commit()
     conn.close()
@@ -109,6 +123,14 @@ class CareReminderRequest(BaseModel):
 class TaskCreateRequest(BaseModel):
     elderly_id: int; elderly_name: str; elderly_avatar: str = "👵"
     content: str; profile_text: str; mode: str; scheduled_time: Optional[str] = None
+    child_id: Optional[int] = None; child_name: Optional[str] = None
+
+class ChildCreateRequest(BaseModel):
+    name: str; avatar: str = "👤"; relationship: str = ""; personality: str = ""
+
+class ChildUpdateRequest(BaseModel):
+    name: Optional[str] = None; avatar: Optional[str] = None
+    relationship: Optional[str] = None; personality: Optional[str] = None
 
 class TaskAckRequest(BaseModel):
     task_id: int
@@ -258,6 +280,94 @@ def admin_delete_user(user_id: int):
     conn.close()
     return {"success": True}
 
+# ── Children CRUD ──────────────────────────────────────────
+@app.get("/api/elderly/{elderly_id}/children")
+def list_children(elderly_id: int):
+    conn = get_db()
+    rows = conn.execute("SELECT * FROM children WHERE elderly_id=? ORDER BY created_at", (elderly_id,)).fetchall()
+    conn.close()
+    return {"children": [dict(r) for r in rows]}
+
+@app.post("/api/elderly/{elderly_id}/children")
+def create_child(elderly_id: int, req: ChildCreateRequest):
+    conn = get_db()
+    cur = conn.execute(
+        "INSERT INTO children (elderly_id,name,avatar,relationship,personality) VALUES (?,?,?,?,?)",
+        (elderly_id, req.name, req.avatar, req.relationship, req.personality)
+    )
+    conn.commit()
+    row = conn.execute("SELECT * FROM children WHERE id=?", (cur.lastrowid,)).fetchone()
+    conn.close()
+    return {"success": True, "child": dict(row)}
+
+@app.put("/api/children/{child_id}")
+def update_child(child_id: int, req: ChildUpdateRequest):
+    conn = get_db()
+    existing = conn.execute("SELECT * FROM children WHERE id=?", (child_id,)).fetchone()
+    if not existing: conn.close(); raise HTTPException(404, "Child not found")
+    updates = {k:v for k,v in {
+        "name":req.name, "avatar":req.avatar,
+        "relationship":req.relationship, "personality":req.personality
+    }.items() if v is not None}
+    if updates:
+        sets = ", ".join(f"{k}=?" for k in updates)
+        conn.execute(f"UPDATE children SET {sets} WHERE id=?", (*updates.values(), child_id))
+        conn.commit()
+    row = conn.execute("SELECT * FROM children WHERE id=?", (child_id,)).fetchone()
+    conn.close()
+    return {"success": True, "child": dict(row)}
+
+@app.delete("/api/children/{child_id}")
+def delete_child(child_id: int):
+    conn = get_db()
+    conn.execute("DELETE FROM children WHERE id=?", (child_id,))
+    conn.commit()
+    conn.close()
+    return {"success": True}
+
+# ── Lingya AI Review ───────────────────────────────────────
+LINGYA_API_KEY = os.getenv("LINGYA_API_KEY") or os.getenv("LLM_API_KEY")
+LINGYA_BASE_URL = os.getenv("LINGYA_BASE_URL") or "https://api.lingyaai.cn/v1"
+LINGYA_MODEL = os.getenv("LINGYA_MODEL") or "doubao-seed-2-0-mini"
+
+def _lingya_review_text(text: str, elderly_profile: str = "", child_name: str = "") -> tuple:
+    """Use Lingya API to review text content. Returns (passed, issues[], suggestion)."""
+    if not LINGYA_API_KEY:
+        return None, [], "Lingya API not configured"
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=LINGYA_API_KEY, base_url=LINGYA_BASE_URL)
+        review_prompt = f"""你是养老照护内容安全审查助手。请判断以下护工输入的照护内容是否适合播放给老人。
+
+【安全红线 - 出现任一即判block】：
+- 威胁、恐吓、辱骂、羞辱或情绪操控老人
+- 诱导转账、索要银行卡、密码、验证码、身份证
+- 引导老人扫码付款、购买保健品、投资理财或联系陌生人
+- 擅自建议停药、换药、加量、减量或替代就医
+- 出现隐私泄露（证件、病历、家庭住址等）
+
+【护工输入的照护内容】
+{text}
+
+【老人画像】
+{elderly_profile or "（无）"}
+
+【执行数字人身份】
+{child_name or "AI陪伴助手"}
+
+请严格输出JSON，不要多余解释：
+{{"passed": true/false, "issues": [], "suggestion": ""}}"""
+        resp = client.chat.completions.create(
+            model=LINGYA_MODEL,
+            messages=[{"role":"user","content":review_prompt}],
+            max_tokens=500, temperature=0.1
+        )
+        result = json.loads(resp.choices[0].message.content)
+        return result["passed"], result.get("issues", []), result.get("suggestion", "")
+    except Exception as e:
+        print(f"[Lingya review error] {e}")
+        return None, [], str(e)
+
 # ── Task Management ──────────────────────────────────────
 @app.get("/api/tasks")
 def list_tasks():
@@ -265,14 +375,40 @@ def list_tasks():
 
 @app.post("/api/tasks")
 def create_task(req: TaskCreateRequest):
+    # 1. Keyword-based review (always runs)
+    passed, level, kw_issues, _ = _review_content(req.content)
+    if not passed:
+        detail = "; ".join(kw_issues)
+        print(f"\n  [REVIEW BLOCKED] keyword check failed: {detail}\n")
+        raise HTTPException(400, f"内容不合法，已拦截：{detail}")
+
+    # 2. LLM-based review (if Lingya API configured)
+    elderly_profile = req.profile_text
+    llm_passed, llm_issues, llm_suggestion = _lingya_review_text(
+        req.content, elderly_profile, req.child_name or ""
+    )
+    if llm_passed is False:
+        detail = "; ".join(llm_issues) or llm_suggestion
+        print(f"\n  [REVIEW BLOCKED] LLM check failed: {detail}\n")
+        raise HTTPException(400, f"内容不合法，已拦截：{detail}")
+    if llm_passed is None and llm_issues:
+        print(f"  [Lingya unavailable] {llm_issues[0]} — falling back to keyword review only")
+
+    # 3. Create task
     global _next_task_id
     task_id = _next_task_id; _next_task_id += 1
     video = _select_video(req.content)
     rewritten = _rewrite_to_caring(req.content)
-    print(f"\n{'='*60}\n  [TASK] #{task_id} created: {req.elderly_name} | {req.mode} {req.scheduled_time or ''}\n  content: {req.content}\n{'='*60}\n")
+
+    # Personalize greeting if child is specified
+    if req.child_name:
+        rewritten = f"我是{req.child_name}，{rewritten}"
+
+    print(f"\n{'='*60}\n  [TASK] #{task_id} created: {req.elderly_name} | child:{req.child_name or 'AI'}\n  content: {req.content}\n{'='*60}\n")
     task = {"id":task_id,"elderly_id":req.elderly_id,"elderly_name":req.elderly_name,
             "elderly_avatar":req.elderly_avatar,"content":req.content,"rewritten":rewritten,
             "profile_text":req.profile_text,"mode":req.mode,"scheduled_time":req.scheduled_time,
+            "child_id":req.child_id,"child_name":req.child_name,
             "video_url":f"/api/videos/{video}","duration_seconds":15,
             "ai_signature":"AI 亲情陪伴助手，由家人授权创建",
             "created_at":datetime.now().isoformat(),"pushed":False,"pushed_at":None}

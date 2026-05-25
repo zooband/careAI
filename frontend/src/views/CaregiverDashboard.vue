@@ -88,7 +88,30 @@
           </div>
         </div>
         <div class="flex-1 flex flex-col overflow-hidden min-h-0">
-          <div class="flex items-center justify-between mb-1.5">
+          <!-- Children Section -->
+          <div class="flex-shrink-0 mb-2">
+            <button @click="showChildren=!showChildren" class="flex items-center gap-2 text-sm font-medium text-gray-500 mb-1.5">
+              <i class="fas fa-users"></i>子女 ({{ children.length }})
+              <i class="fas fa-chevron-down text-xs transition-transform" :class="showChildren?'rotate-0':'-rotate-90'"></i>
+            </button>
+            <div v-if="showChildren" class="space-y-2">
+              <div v-for="c in children" :key="c.id"
+                class="flex items-center gap-2 px-3 py-2 bg-white rounded-xl border border-gray-100">
+                <span class="text-2xl">{{ c.avatar }}</span>
+                <div class="flex-1 min-w-0">
+                  <div class="text-sm font-medium text-gray-800">{{ c.name }} <span class="text-xs text-gray-400 font-normal">({{ c.relationship||'子女' }})</span></div>
+                  <div class="text-xs text-gray-400 truncate">{{ c.personality || '暂无描述' }}</div>
+                </div>
+                <button @click="editChild(c)" class="text-primary-400 hover:text-primary-600 text-xs"><i class="fas fa-edit"></i></button>
+                <button @click="deleteChild(c.id)" class="text-gray-300 hover:text-red-400 text-xs"><i class="fas fa-times"></i></button>
+              </div>
+              <button @click="openAddChild" class="flex items-center gap-1.5 text-xs text-primary-500 hover:text-primary-700">
+                <i class="fas fa-plus"></i>添加子女
+              </button>
+            </div>
+          </div>
+          <!-- Profile Text -->
+          <div class="flex items-center justify-between mb-1.5 flex-shrink-0">
             <label class="text-sm font-medium text-gray-400"><i class="fas fa-file-lines mr-1"></i>画像文字</label>
             <button @click="saveProfile" :disabled="savingProfile"
               class="text-xs px-3 py-1.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors flex items-center gap-1">
@@ -112,6 +135,13 @@
           </div>
           <textarea v-model="taskContent" rows="3" placeholder="例如：提醒王奶奶晚上8点吃降压药"
             class="w-full bg-warm-50 border border-warm-200 rounded-xl p-4 text-base text-gray-700 resize-none outline-none focus:border-primary-300 placeholder-gray-300 leading-relaxed" />
+          <div class="mt-3 flex items-center gap-3">
+            <span class="text-sm text-gray-500 flex-shrink-0"><i class="fas fa-user-tie mr-1"></i>数字人身份:</span>
+            <select v-model="selectedChild" class="flex-1 text-base bg-white border border-gray-200 rounded-xl px-4 py-2 outline-none focus:border-primary-400">
+              <option :value="null">AI 默认助手</option>
+              <option v-for="c in children" :key="c.id" :value="c">{{ c.avatar }} {{ c.name }}（{{ c.relationship||'子女' }}）</option>
+            </select>
+          </div>
           <div class="flex items-center gap-6 mt-4">
             <label class="flex items-center gap-2 cursor-pointer">
               <input type="radio" v-model="taskMode" value="immediate" class="w-4 h-4 text-primary-600" />
@@ -223,6 +253,45 @@
         </div>
       </div>
     </div>
+
+    <!-- Child Add/Edit Modal -->
+    <div v-if="childModal" class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center" @click.self="childModal=false">
+      <div class="bg-white rounded-2xl shadow-xl p-6 w-[400px]">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="text-lg font-bold text-gray-800"><i class="fas fa-child mr-2"></i>{{ editingChild ? '编辑子女' : '添加子女' }}</h3>
+          <button @click="childModal=false" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="space-y-3">
+          <div class="flex gap-3">
+            <div class="flex-1">
+              <label class="block text-sm font-medium text-gray-600 mb-1">姓名</label>
+              <input v-model="childForm.name" class="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-base outline-none focus:border-primary-400" />
+            </div>
+            <div class="w-20">
+              <label class="block text-sm font-medium text-gray-600 mb-1">头像</label>
+              <input v-model="childForm.avatar" class="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-base outline-none focus:border-primary-400" />
+            </div>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-600 mb-1">关系（如：儿子、女儿）</label>
+            <input v-model="childForm.relationship" placeholder="儿子/女儿"
+              class="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-base outline-none focus:border-primary-400" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-600 mb-1">性格特征 / 备注</label>
+            <textarea v-model="childForm.personality" rows="2" placeholder="例如：在外地工作，性格温和有耐心，每周视频通话"
+              class="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-base outline-none focus:border-primary-400 resize-none" />
+          </div>
+        </div>
+        <div class="flex gap-3 mt-5">
+          <button @click="saveChild" :disabled="!childForm.name.trim()"
+            class="flex-1 bg-primary-600 text-white rounded-xl py-3 font-medium hover:bg-primary-700 transition-colors">
+            <i class="fas fa-check mr-1"></i>{{ editingChild ? '保存' : '添加' }}
+          </button>
+          <button @click="childModal=false" class="px-6 py-3 border border-gray-200 rounded-xl text-gray-600 hover:bg-gray-50">取消</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -247,9 +316,22 @@ const searchQuery = ref('')
 const showAddModal = ref(false)
 const addSubmitting = ref(false)
 const addForm = ref({ name:'', age:70, avatar:'👴', condition:'', traitsInput:'' })
+const children = ref([])
+const showChildren = ref(true)
+const childModal = ref(false)
+const editingChild = ref(null)
+const selectedChild = ref(null)
+const childForm = ref({ name:'', avatar:'👤', relationship:'', personality:'' })
 let searchTimer = null
 
-function selectElder(elder) { selected.value = elder }
+function selectElder(elder) {
+  selected.value = elder
+  selectedChild.value = null
+  loadChildren(elder.id)
+}
+async function loadChildren(elderId) {
+  try { const r=await fetch(`/api/elderly/${elderId}/children`); const d=await r.json(); children.value=d.children } catch(_) {}
+}
 
 function addTrait() {
   const t = newTrait.value.trim()
@@ -310,10 +392,45 @@ async function submitAddElderly() {
   finally { addSubmitting.value = false }
 }
 
+function openAddChild() {
+  editingChild.value = null
+  childForm.value = { name:'', avatar:'👤', relationship:'', personality:'' }
+  childModal.value = true
+}
+function editChild(c) {
+  editingChild.value = c
+  childForm.value = { name:c.name, avatar:c.avatar, relationship:c.relationship||'', personality:c.personality||'' }
+  childModal.value = true
+}
+async function saveChild() {
+  if (!childForm.value.name.trim() || !selected.value) return
+  const body = { name:childForm.value.name, avatar:childForm.value.avatar||'👤', relationship:childForm.value.relationship, personality:childForm.value.personality }
+  try {
+    let res
+    if (editingChild.value) {
+      res = await fetch(`/api/children/${editingChild.value.id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) })
+    } else {
+      res = await fetch(`/api/elderly/${selected.value.id}/children`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) })
+    }
+    const d = await res.json()
+    if (d.success) childModal.value = false
+  } catch(_) {}
+  finally { loadChildren(selected.value.id) }
+}
+async function deleteChild(id) {
+  if (!confirm('确定删除此子女？')) return
+  try { await fetch(`/api/children/${id}`, { method:'DELETE' }); loadChildren(selected.value.id) } catch(_) {}
+}
+
 const profileText = computed(() => {
   const e = selected.value
   if (!e) return ''
-  return `姓名：${e.name}\n年龄：${e.age}岁\n健康状况：${e.condition}\n特点：${(e.traits||[]).join('、') || '暂无标签'}`
+  let text = `姓名：${e.name}\n年龄：${e.age}岁\n健康状况：${e.condition}\n特点：${(e.traits||[]).join('、') || '暂无标签'}`
+  if (children.value.length) {
+    text += '\n子女：'
+    children.value.forEach(c => { text += `\n  ${c.avatar} ${c.name}（${c.relationship||'子女'}）- ${c.personality||'暂无描述'}` })
+  }
+  return text
 })
 
 function modeLabel(m) { return { immediate:'🚀 即时', scheduled:'⏰ 定时', daily:'🔁 每日' }[m]||m }
@@ -338,12 +455,20 @@ async function createTask() {
     elderly_id: selected.value.id, elderly_name: selected.value.name, elderly_avatar: selected.value.avatar,
     content: taskContent.value, profile_text: profileText.value,
     mode: taskMode.value, scheduled_time: taskMode.value === 'immediate' ? null : taskTime.value,
+    child_id: selectedChild.value?.id || null,
+    child_name: selectedChild.value?.name || null,
   }
   try {
     const res = await fetch('/api/tasks', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) })
+    if (!res.ok) {
+      const err = await res.json()
+      createResult.value = { success:false, msg:`❌ ${err.detail || '内容不合法，已被拦截'}` }
+      return
+    }
     const data = await res.json()
-    if (data.success) { tasks.value.unshift(data.task); createResult.value = { success:true, msg:`✅ 任务 #${data.task.id} 已创建` }; taskContent.value = '' }
-    else createResult.value = { success:false, msg:'❌ 创建失败' }
+    tasks.value.unshift(data.task)
+    createResult.value = { success:true, msg:`✅ 任务 #${data.task.id} 已创建` }
+    taskContent.value = ''
   } catch (e) { createResult.value = { success:false, msg:`❌ 网络错误: ${e.message}` }
   } finally { creating.value = false }
 }
@@ -362,7 +487,10 @@ onMounted(async () => {
     const taskData = await taskRes.json()
     elderlyList.value = elderData.users
     tasks.value = taskData.tasks
-    if (elderlyList.value.length) selected.value = elderlyList.value[0]
+    if (elderlyList.value.length) {
+      selected.value = elderlyList.value[0]
+      loadChildren(selected.value.id)
+    }
   } catch (_) {}
 })
 </script>
