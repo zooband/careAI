@@ -142,7 +142,7 @@
       </div>
 
       <!-- Right: Task Creation + Schedule -->
-      <div class="flex-1 flex flex-col gap-5 overflow-hidden min-w-0">
+      <div class="flex-1 flex flex-col gap-5 overflow-y-auto min-w-0 pr-1">
         <!-- Task Creation Form -->
         <div class="flex-shrink-0 bg-white/70 backdrop-blur-sm rounded-2xl border border-white/50 shadow p-5">
           <div class="flex items-center justify-between mb-3">
@@ -237,12 +237,12 @@
         </div>
 
         <!-- Task Schedule List -->
-        <div class="flex-1 bg-white/70 backdrop-blur-sm rounded-2xl border border-white/50 shadow p-5 flex flex-col overflow-hidden min-h-0">
-          <div class="flex-shrink-0 flex items-center justify-between mb-3">
+        <div class="bg-white/70 backdrop-blur-sm rounded-2xl border border-white/50 shadow p-5">
+          <div class="flex items-center justify-between mb-3">
             <h3 class="text-lg font-bold text-gray-800"><i class="fas fa-calendar mr-2"></i>任务时间表</h3>
             <span class="text-sm text-gray-400">{{ tasks.length }} 个任务</span>
           </div>
-          <div class="flex-1 overflow-y-auto space-y-3 min-h-0">
+          <div class="space-y-3">
             <div v-if="tasks.length === 0" class="text-center text-gray-400 text-base pt-12">暂无任务</div>
             <div v-for="t in tasks" :key="t.id"
               class="p-4 rounded-xl border transition-all"
