@@ -156,7 +156,7 @@
                 videoMode==='reminder'?'border-primary-500 bg-primary-50 shadow-sm':'border-gray-200 bg-white/70 hover:border-gray-300']">
               <i class="fas fa-bell text-xl mb-0.5" :class="videoMode==='reminder'?'text-primary-500':'text-gray-400'"></i>
               <div class="font-bold text-xs" :class="videoMode==='reminder'?'text-primary-700':'text-gray-600'">提醒</div>
-              <div class="text-[10px] text-gray-400">AI匹配最佳视频</div>
+              <div class="text-[10px] text-gray-400">智能推荐</div>
             </button>
             <button @click="videoMode='digital'"
               :class="['flex-1 py-3 px-2 rounded-xl border-2 transition-all text-center',
