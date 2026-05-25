@@ -169,8 +169,7 @@ def _select_video(text: str) -> str:
 def _ai_match_video(prompt: str) -> str:
     """Use DeepSeek to match a prompt to the best video in videos/提醒/.
 
-    Falls back to _select_video() if DeepSeek is unavailable or the directory
-    is empty / doesn't exist.
+    Falls back to keyword matching if DeepSeek is unavailable.
     """
     reminders_dir = os.path.join(os.path.dirname(BASE_DIR), "videos", "提醒")
     if not os.path.isdir(reminders_dir):
@@ -181,41 +180,47 @@ def _ai_match_video(prompt: str) -> str:
     if not video_files:
         return f"/api/videos/{_select_video(prompt)}"
 
+    # ── Try DeepSeek API ──
     deepseek_key = os.getenv("DEEPSEEK_API_KEY")
-    if not deepseek_key:
-        # Simple keyword fallback
-        for f in video_files:
-            name = os.path.splitext(f)[0]
-            if any(kw in name for kw in prompt):
-                return f"/api/videos/提醒/{f}"
-        return f"/api/videos/提醒/{video_files[0]}"
+    if deepseek_key:
+        try:
+            from openai import OpenAI
+            client = OpenAI(
+                api_key=deepseek_key,
+                base_url=os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1"),
+            )
+            model = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+            choices = [os.path.splitext(f)[0] for f in video_files]
+            list_str = "、".join(choices)
 
-    try:
-        from openai import OpenAI
-        client = OpenAI(
-            api_key=deepseek_key,
-            base_url=os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/anthropic"),
-        )
-        model = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
-        choices = [os.path.splitext(f)[0] for f in video_files]
+            resp = client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": rf"""从以下列表中选一个最适合「{prompt}」的，只返回名称本身：{list_str}"""}],
+                max_tokens=50, temperature=0.1,
+            )
+            matched = resp.choices[0].message.content.strip().strip('"\'').strip()
+            print(f"[DeepSeek] 原始返回: '{matched}'")
+            for f in video_files:
+                name = os.path.splitext(f)[0]
+                if name == matched or name in matched or matched in name:
+                    return f"/api/videos/提醒/{f}"
+        except Exception as e:
+            print(f"[DeepSeek] API调用失败: {e}")
 
-        resp = client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": rf"""
-从以下视频名称中选出最匹配照顾老人场景的一个，只返回名称本身，不要多余内容。
-视频列表：{json.dumps(choices, ensure_ascii=False)}
-照护内容：{prompt}
-"""}],
-            max_tokens=50, temperature=0.1,
-        )
-        matched = resp.choices[0].message.content.strip().strip('"\'').strip()
-        for f in video_files:
-            if os.path.splitext(f)[0] == matched:
-                return f"/api/videos/提醒/{f}"
-        return f"/api/videos/提醒/{video_files[0]}"
-    except Exception as e:
-        print(f"[DeepSeek match error] {e}")
-        return f"/api/videos/提醒/{video_files[0]}"
+    # ── Keyword fallback ──
+    keywords = {
+        "奶奶吃药.mp4": ["药", "吃药", "服药", "药丸", "药品"],
+        "提醒上合唱课.mp4": ["合唱", "唱歌", "音乐", "歌", "唱"],
+        "提醒上插花课.mp4": ["插花", "花", "花艺", "花卉", "园艺"],
+    }
+    for f in video_files:
+        name = os.path.splitext(f)[0]
+        kws = keywords.get(f, [name])
+        if any(kw in prompt for kw in kws):
+            return f"/api/videos/提醒/{f}"
+
+    # Last resort
+    return f"/api/videos/提醒/{video_files[0]}"
 
 def _rewrite_to_caring(text: str) -> str:
     for key, val in {"吃药":"到吃药时间啦，先把药吃了，再喝点温水~","提醒":"温柔地提醒您","睡觉":"今天辛苦啦，早点休息，明天精神会更好~","吃饭":"该吃饭啦，今天的饭菜很香哦","运动":"康复时间到啦，我们慢慢活动一下~"}.items():
