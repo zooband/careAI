@@ -63,7 +63,15 @@
       <!-- Left: Profile Panel -->
       <div class="w-[400px] bg-white/70 backdrop-blur-sm rounded-2xl border border-white/50 shadow p-5 flex flex-col overflow-hidden flex-shrink-0">
         <div class="flex-shrink-0 flex items-start gap-4 mb-3">
-          <span class="text-5xl">{{ selected.avatar }}</span>
+          <div class="relative flex-shrink-0">
+            <div class="w-16 h-16 rounded-xl overflow-hidden bg-gray-100 flex items-center justify-center text-3xl border">
+              <img v-if="selectedPhotoUrl" :src="selectedPhotoUrl" class="w-full h-full object-cover" />
+              <span v-else>{{ selected.avatar }}</span>
+            </div>
+            <button @click="uploadPhoto('elderly')" class="absolute -bottom-1 -right-1 w-6 h-6 bg-primary-600 text-white rounded-full text-xs flex items-center justify-center shadow hover:bg-primary-700">
+              <i class="fas fa-camera"></i>
+            </button>
+          </div>
           <div class="flex-1 min-w-0">
             <div class="text-xl font-bold text-gray-800">{{ selected.name }}</div>
             <div class="text-sm text-gray-500">{{ selected.age }}岁 · {{ selected.condition }}</div>
@@ -97,7 +105,15 @@
             <div v-if="showChildren" class="space-y-2">
               <div v-for="c in children" :key="c.id"
                 class="flex items-center gap-2 px-3 py-2 bg-white rounded-xl border border-gray-100">
-                <span class="text-2xl">{{ c.avatar }}</span>
+                <div class="relative flex-shrink-0">
+                  <div class="w-9 h-9 rounded-lg overflow-hidden bg-gray-100 flex items-center justify-center text-base border">
+                    <img v-if="c.photo" :src="c.photo" class="w-full h-full object-cover" />
+                    <span v-else>{{ c.avatar }}</span>
+                  </div>
+                  <button @click="uploadChildPhoto(c)" class="absolute -bottom-1 -right-1 w-4 h-4 bg-primary-500 text-white rounded-full text-[8px] flex items-center justify-center shadow hover:bg-primary-600">
+                    <i class="fas fa-camera"></i>
+                  </button>
+                </div>
                 <div class="flex-1 min-w-0">
                   <div class="text-sm font-medium text-gray-800">{{ c.name }} <span class="text-xs text-gray-400 font-normal">({{ c.relationship||'子女' }})</span></div>
                   <div class="text-xs text-gray-400 truncate">{{ c.personality || '暂无描述' }}</div>
@@ -292,6 +308,8 @@
         </div>
       </div>
     </div>
+    <!-- Hidden file input for photo uploads -->
+    <input ref="fileInput" type="file" accept="image/*" class="hidden" @change="onFileSelected" />
   </div>
 </template>
 
@@ -322,6 +340,9 @@ const childModal = ref(false)
 const editingChild = ref(null)
 const selectedChild = ref(null)
 const childForm = ref({ name:'', avatar:'👤', relationship:'', personality:'' })
+const selectedPhotoUrl = ref('')
+const fileInput = ref(null)
+let pendingUploadTarget = null
 let searchTimer = null
 
 function selectElder(elder) {
@@ -422,6 +443,38 @@ async function deleteChild(id) {
   try { await fetch(`/api/children/${id}`, { method:'DELETE' }); loadChildren(selected.value.id) } catch(_) {}
 }
 
+function uploadPhoto(target) {
+  pendingUploadTarget = target
+  fileInput.value?.click()
+}
+function uploadChildPhoto(child) {
+  pendingUploadTarget = child
+  fileInput.value?.click()
+}
+async function onFileSelected(e) {
+  const file = e.target.files?.[0]
+  if (!file || !pendingUploadTarget) return
+  const form = new FormData()
+  form.append('file', file)
+  try {
+    const res = await fetch('/api/upload', { method:'POST', body: form })
+    const d = await res.json()
+    if (!d.success) return
+    if (pendingUploadTarget === 'elderly') {
+      selectedPhotoUrl.value = d.url
+    } else if (pendingUploadTarget?.id) {
+      // Update child's photo via API
+      await fetch(`/api/children/${pendingUploadTarget.id}`, {
+        method:'PUT',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ photo: d.url })
+      })
+      loadChildren(selected.value.id)
+    }
+  } catch(_) {}
+  finally { pendingUploadTarget = null; e.target.value = '' }
+}
+
 const profileText = computed(() => {
   const e = selected.value
   if (!e) return ''
@@ -457,6 +510,8 @@ async function createTask() {
     mode: taskMode.value, scheduled_time: taskMode.value === 'immediate' ? null : taskTime.value,
     child_id: selectedChild.value?.id || null,
     child_name: selectedChild.value?.name || null,
+    photo_url: selectedPhotoUrl.value || null,
+    child_photo_url: selectedChild.value?.photo || null,
   }
   try {
     const res = await fetch('/api/tasks', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) })

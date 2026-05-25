@@ -39,6 +39,9 @@ videos/
 *.swp
 *.swo
 
+# Uploads (user-generated photos)
+uploads/
+
 # Project scaffold (not source)
 poster.jpg
 *.tex

@@ -29,6 +29,10 @@ VIDEOS_DIR = os.path.join(os.path.dirname(BASE_DIR), "videos")
 os.makedirs(VIDEOS_DIR, exist_ok=True)
 app.mount("/api/videos", StaticFiles(directory=VIDEOS_DIR), name="videos")
 
+UPLOADS_DIR = os.path.join(os.path.dirname(BASE_DIR), "uploads")
+os.makedirs(UPLOADS_DIR, exist_ok=True)
+app.mount("/api/uploads", StaticFiles(directory=UPLOADS_DIR), name="uploads")
+
 # ── SQLite Database ──────────────────────────────────────
 DB_PATH = os.path.join(BASE_DIR, "qinban.db")
 
@@ -56,6 +60,7 @@ def init_db():
             elderly_id INTEGER NOT NULL,
             name TEXT NOT NULL,
             avatar TEXT DEFAULT '👤',
+            photo TEXT DEFAULT '',
             relationship TEXT DEFAULT '',
             personality TEXT DEFAULT '',
             voice_profile TEXT DEFAULT '',
@@ -124,12 +129,13 @@ class TaskCreateRequest(BaseModel):
     elderly_id: int; elderly_name: str; elderly_avatar: str = "👵"
     content: str; profile_text: str; mode: str; scheduled_time: Optional[str] = None
     child_id: Optional[int] = None; child_name: Optional[str] = None
+    photo_url: Optional[str] = None; child_photo_url: Optional[str] = None
 
 class ChildCreateRequest(BaseModel):
-    name: str; avatar: str = "👤"; relationship: str = ""; personality: str = ""
+    name: str; avatar: str = "👤"; photo: str = ""; relationship: str = ""; personality: str = ""
 
 class ChildUpdateRequest(BaseModel):
-    name: Optional[str] = None; avatar: Optional[str] = None
+    name: Optional[str] = None; avatar: Optional[str] = None; photo: Optional[str] = None
     relationship: Optional[str] = None; personality: Optional[str] = None
 
 class TaskAckRequest(BaseModel):
@@ -292,8 +298,8 @@ def list_children(elderly_id: int):
 def create_child(elderly_id: int, req: ChildCreateRequest):
     conn = get_db()
     cur = conn.execute(
-        "INSERT INTO children (elderly_id,name,avatar,relationship,personality) VALUES (?,?,?,?,?)",
-        (elderly_id, req.name, req.avatar, req.relationship, req.personality)
+        "INSERT INTO children (elderly_id,name,avatar,photo,relationship,personality) VALUES (?,?,?,?,?,?)",
+        (elderly_id, req.name, req.avatar, req.photo, req.relationship, req.personality)
     )
     conn.commit()
     row = conn.execute("SELECT * FROM children WHERE id=?", (cur.lastrowid,)).fetchone()
@@ -306,7 +312,7 @@ def update_child(child_id: int, req: ChildUpdateRequest):
     existing = conn.execute("SELECT * FROM children WHERE id=?", (child_id,)).fetchone()
     if not existing: conn.close(); raise HTTPException(404, "Child not found")
     updates = {k:v for k,v in {
-        "name":req.name, "avatar":req.avatar,
+        "name":req.name, "avatar":req.avatar, "photo":req.photo,
         "relationship":req.relationship, "personality":req.personality
     }.items() if v is not None}
     if updates:
@@ -368,6 +374,20 @@ def _lingya_review_text(text: str, elderly_profile: str = "", child_name: str = 
         print(f"[Lingya review error] {e}")
         return None, [], str(e)
 
+# ── Upload ────────────────────────────────────────────────
+UPLOAD_ALLOWED = {"image/jpeg","image/png","image/webp","image/gif","image/bmp"}
+
+@app.post("/api/upload")
+async def upload_file(file: UploadFile = File(...)):
+    if file.content_type not in UPLOAD_ALLOWED:
+        raise HTTPException(400, f"不支持的文件类型: {file.content_type}，仅支持图片")
+    ext = {"image/jpeg":".jpg","image/png":".png","image/webp":".webp","image/gif":".gif","image/bmp":".bmp"}.get(file.content_type, ".bin")
+    filename = f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{random.randint(1000,9999)}{ext}"
+    path = os.path.join(UPLOADS_DIR, filename)
+    with open(path, "wb") as f:
+        f.write(await file.read())
+    return {"success": True, "url": f"/api/uploads/{filename}"}
+
 # ── Task Management ──────────────────────────────────────
 @app.get("/api/tasks")
 def list_tasks():
@@ -409,6 +429,7 @@ def create_task(req: TaskCreateRequest):
             "elderly_avatar":req.elderly_avatar,"content":req.content,"rewritten":rewritten,
             "profile_text":req.profile_text,"mode":req.mode,"scheduled_time":req.scheduled_time,
             "child_id":req.child_id,"child_name":req.child_name,
+            "photo_url":req.photo_url,"child_photo_url":req.child_photo_url,
             "video_url":f"/api/videos/{video}","duration_seconds":15,
             "ai_signature":"AI 亲情陪伴助手，由家人授权创建",
             "created_at":datetime.now().isoformat(),"pushed":False,"pushed_at":None}
