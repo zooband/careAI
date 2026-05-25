@@ -42,6 +42,9 @@ videos/
 # Uploads (user-generated photos)
 uploads/
 
+# Figures (portrait images)
+figures/
+
 # Project scaffold (not source)
 poster.jpg
 *.tex

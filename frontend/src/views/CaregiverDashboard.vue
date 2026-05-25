@@ -151,12 +151,12 @@
           </div>
           <!-- Video Mode Selection -->
           <div class="flex gap-2 mb-4">
-            <button @click="videoMode='prerecorded'"
+            <button @click="videoMode='reminder'"
               :class="['flex-1 py-3 px-2 rounded-xl border-2 transition-all text-center',
-                videoMode==='prerecorded'?'border-primary-500 bg-primary-50 shadow-sm':'border-gray-200 bg-white/70 hover:border-gray-300']">
-              <i class="fas fa-video text-xl mb-0.5" :class="videoMode==='prerecorded'?'text-primary-500':'text-gray-400'"></i>
-              <div class="font-bold text-xs" :class="videoMode==='prerecorded'?'text-primary-700':'text-gray-600'">预制视频</div>
-              <div class="text-[10px] text-gray-400">可上传自定义视频</div>
+                videoMode==='reminder'?'border-primary-500 bg-primary-50 shadow-sm':'border-gray-200 bg-white/70 hover:border-gray-300']">
+              <i class="fas fa-bell text-xl mb-0.5" :class="videoMode==='reminder'?'text-primary-500':'text-gray-400'"></i>
+              <div class="font-bold text-xs" :class="videoMode==='reminder'?'text-primary-700':'text-gray-600'">提醒</div>
+              <div class="text-[10px] text-gray-400">AI匹配最佳视频</div>
             </button>
             <button @click="videoMode='digital'"
               :class="['flex-1 py-3 px-2 rounded-xl border-2 transition-all text-center',
@@ -173,15 +173,17 @@
               <div class="text-[10px] text-gray-400">支持语音互动</div>
             </button>
           </div>
-          <!-- Video file upload (prerecorded mode only) -->
-          <div v-if="videoMode==='prerecorded'" class="mb-3 flex items-center gap-3">
-            <button @click="videoFileInput?.click()"
-              class="px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm text-gray-600 hover:border-primary-300 hover:text-primary-600 transition-all flex items-center gap-2">
-              <i class="fas fa-upload"></i>
-              {{ customVideoName || '选择视频文件' }}
-            </button>
-            <span v-if="customVideoUrl" class="text-xs text-green-600"><i class="fas fa-check-circle mr-1"></i>已上传</span>
-            <span v-else class="text-xs text-gray-400">选填，默认使用 AI 推荐视频</span>
+          <!-- Reminder presets (reminder mode only) -->
+          <div v-if="videoMode==='reminder'" class="mb-3">
+            <div class="grid grid-cols-2 gap-2">
+              <button v-for="(p,i) in reminderPresets" :key="i"
+                @click="quickReminder(p)"
+                class="px-4 py-3 bg-white border border-gray-200 rounded-xl text-left hover:border-primary-300 hover:shadow-sm transition-all group"
+                :disabled="pushingPreset === i">
+                <div class="font-bold text-sm text-gray-700 group-hover:text-primary-700">{{ p.icon }} {{ p.label }}</div>
+                <div class="text-xs text-gray-400 mt-0.5 line-clamp-2">{{ p.content }}</div>
+              </button>
+            </div>
           </div>
           <!-- Digital human photo upload (digital/interactive mode) -->
           <div v-if="videoMode==='digital'||videoMode==='interactive'" class="mb-3 flex items-center gap-3">
@@ -391,7 +393,8 @@ const selectedPhotoUrl = ref('')
 const fileInput = ref(null)
 const videoFileInput = ref(null)
 const dhPhotoInput = ref(null)
-const videoMode = ref('prerecorded')
+const videoMode = ref('reminder')
+const pushingPreset = ref(null)
 const customVideoUrl = ref(null)
 const customVideoName = ref(null)
 const dhPhotoUrl = ref(null)
@@ -586,7 +589,7 @@ const profileText = computed(() => {
 })
 
 function modeLabel(m) { return { immediate:'🚀 即时', scheduled:'⏰ 定时', daily:'🔁 每日' }[m]||m }
-function videoModeLabel(m) { return { prerecorded:'📹 预制', digital:'🤖 数字人', interactive:'🎤 可交互' }[m]||m||'📹 预制' }
+function videoModeLabel(m) { return { reminder:'🔔 提醒', digital:'🤖 数字人', interactive:'🎤 可交互' }[m]||m||'🔔 提醒' }
 function statusLabel(t) {
   if (t.pushed) return '<i class="fas fa-check-circle mr-1"></i>已推送'
   if (t.mode === 'immediate') return '⏳ 待推送'
@@ -633,6 +636,45 @@ async function createTask() {
 async function deleteTask(id) {
   try { await fetch(`/api/tasks/${id}`, { method:'DELETE' }); tasks.value = tasks.value.filter(t => t.id !== id) }
   catch (_) {}
+}
+
+const reminderPresets = [
+  { icon:'💊', label:'吃药提醒', content:'到吃药时间了，先把药吃了，再喝点温水~' },
+  { icon:'🏃', label:'康复运动', content:'康复时间到啦，我们慢慢活动一下，不着急~' },
+  { icon:'🍚', label:'吃饭提醒', content:'该吃饭啦，今天的饭菜很香哦，趁热吃~' },
+  { icon:'🌙', label:'睡觉提醒', content:'今天辛苦啦，早点休息，明天精神会更好~' },
+  { icon:'💕', label:'暖心问候', content:'今天过得怎么样？要照顾好自己，我一直在~' },
+  { icon:'☀️', label:'早安问候', content:'早上好呀，又是美好的一天，记得吃早餐哦~' },
+]
+
+async function quickReminder(preset) {
+  if (!selected.value) return
+  pushingPreset.value = reminderPresets.indexOf(preset)
+  const payload = {
+    elderly_id: selected.value.id, elderly_name: selected.value.name, elderly_avatar: selected.value.avatar,
+    content: preset.content, profile_text: profileText.value,
+    mode: 'immediate', scheduled_time: null,
+    child_id: null, child_name: null,
+    photo_url: null, child_photo_url: null,
+    video_mode: 'reminder',
+    custom_video_url: null,
+    digital_human_photo_url: null,
+  }
+  try {
+    const res = await fetch('/api/tasks', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) })
+    if (!res.ok) {
+      const err = await res.json()
+      createResult.value = { success:false, msg:`❌ ${err.detail || '发送失败'}` }
+      return
+    }
+    const data = await res.json()
+    tasks.value.unshift(data.task)
+    createResult.value = { success:true, msg:`✅ 已推送「${preset.label}」` }
+  } catch (e) {
+    createResult.value = { success:false, msg:`❌ 网络错误: ${e.message}` }
+  } finally {
+    pushingPreset.value = null
+  }
 }
 
 onMounted(async () => {
